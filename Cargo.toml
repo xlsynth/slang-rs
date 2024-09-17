@@ -2,6 +2,11 @@
 name = "slang-rs"
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0"
+description = "Rust bindings for the Slang Verilog parser"
+repository = "https://github.com/xlsynth/slang-rs.git"
+homepage = "https://github.com/xlsynth/slang-rs.git"
+documentation = "https://docs.rs/slang-rs"
 
 [dependencies]
 serde_json = "1.0.128"
