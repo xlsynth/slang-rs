@@ -5,8 +5,15 @@ mod tests {
     use slang_rs::*;
 
     #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+    fn test_basic() {
+        let verilog = "module foo; endmodule";
+        let result = run_slang(verilog);
+        for member in result.unwrap()["design"]["members"].as_array().unwrap() {
+            if member["kind"] == "Instance" {
+                assert_eq!(member["name"], "foo");
+                return;
+            }
+        }
+        panic!("Instance not found");
     }
 }
