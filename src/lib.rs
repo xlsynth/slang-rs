@@ -6,7 +6,7 @@ use std::io::Write;
 use std::process::Command;
 
 mod extract;
-pub use extract::{extract_ports, IO};
+pub use extract::{extract_ports, Port, PortDir};
 
 pub fn run_slang(
     verilog: &str,

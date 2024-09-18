@@ -32,18 +32,78 @@ mod tests {
         assert_eq!(
             definitions["foo"],
             vec![
-                IO::Input { msb: 0, lsb: 0 },
-                IO::Output { msb: 1, lsb: 0 },
-                IO::Output { msb: 2, lsb: 0 },
-                IO::Input { msb: 3, lsb: 0 },
-                IO::Output { msb: 4, lsb: 0 },
-                IO::Output { msb: 5, lsb: 0 },
-                IO::Output { msb: 6, lsb: 0 },
-                IO::Input { msb: 7, lsb: 0 },
-                IO::Output { msb: 8, lsb: 0 },
-                IO::Input { msb: 9, lsb: 0 },
-                IO::Output { msb: 10, lsb: 0 },
-                IO::InOut { msb: 0, lsb: 11 }
+                Port {
+                    dir: PortDir::Input,
+                    name: "a".to_string(),
+                    msb: 0,
+                    lsb: 0
+                },
+                Port {
+                    dir: PortDir::Output,
+                    name: "b".to_string(),
+                    msb: 1,
+                    lsb: 0
+                },
+                Port {
+                    dir: PortDir::Output,
+                    name: "c".to_string(),
+                    msb: 2,
+                    lsb: 0
+                },
+                Port {
+                    dir: PortDir::Input,
+                    name: "d".to_string(),
+                    msb: 3,
+                    lsb: 0
+                },
+                Port {
+                    dir: PortDir::Output,
+                    name: "e".to_string(),
+                    msb: 4,
+                    lsb: 0
+                },
+                Port {
+                    dir: PortDir::Output,
+                    name: "f".to_string(),
+                    msb: 5,
+                    lsb: 0
+                },
+                Port {
+                    dir: PortDir::Output,
+                    name: "g".to_string(),
+                    msb: 6,
+                    lsb: 0
+                },
+                Port {
+                    dir: PortDir::Input,
+                    name: "h".to_string(),
+                    msb: 7,
+                    lsb: 0
+                },
+                Port {
+                    dir: PortDir::Output,
+                    name: "i".to_string(),
+                    msb: 8,
+                    lsb: 0
+                },
+                Port {
+                    dir: PortDir::Input,
+                    name: "j".to_string(),
+                    msb: 9,
+                    lsb: 0
+                },
+                Port {
+                    dir: PortDir::Output,
+                    name: "k".to_string(),
+                    msb: 10,
+                    lsb: 0
+                },
+                Port {
+                    dir: PortDir::InOut,
+                    name: "l".to_string(),
+                    msb: 0,
+                    lsb: 11
+                }
             ]
         );
     }
