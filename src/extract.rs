@@ -2,20 +2,42 @@
 
 use serde_json::Value;
 use std::collections::{hash_map::Entry, HashMap};
+use std::str::FromStr;
 
 #[derive(Debug, PartialEq)]
-pub enum IO {
-    Input { msb: usize, lsb: usize },
-    Output { msb: usize, lsb: usize },
-    InOut { msb: usize, lsb: usize },
+pub enum PortDir {
+    Input,
+    Output,
+    InOut,
 }
 
-pub fn extract_ports(verilog: &str, ignore_unknown_modules: bool) -> HashMap<String, Vec<IO>> {
+impl FromStr for PortDir {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "In" => Ok(PortDir::Input),
+            "Out" => Ok(PortDir::Output),
+            "InOut" => Ok(PortDir::InOut),
+            _ => Err(format!("Unsupported I/O direction: {}", s)),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Port {
+    pub dir: PortDir,
+    pub name: String,
+    pub msb: usize,
+    pub lsb: usize,
+}
+
+pub fn extract_ports(verilog: &str, ignore_unknown_modules: bool) -> HashMap<String, Vec<Port>> {
     let result = crate::run_slang(verilog, ignore_unknown_modules).unwrap();
     extract_ports_from_value(&result)
 }
 
-fn extract_ports_from_value(value: &Value) -> HashMap<String, Vec<IO>> {
+fn extract_ports_from_value(value: &Value) -> HashMap<String, Vec<Port>> {
     let mut ports_map = HashMap::new();
 
     if let Some(members) = value["design"]["members"].as_array() {
@@ -28,16 +50,16 @@ fn extract_ports_from_value(value: &Value) -> HashMap<String, Vec<IO>> {
                         let kind = instance_member["kind"].as_str().unwrap();
                         match kind {
                             "Port" => {
+                                let port_name = instance_member["name"].as_str().unwrap();
                                 let direction = instance_member["direction"].as_str().unwrap();
                                 let type_str = instance_member["type"].as_str().unwrap();
                                 let (msb, lsb) = extract_msb_lsb(type_str);
-
-                                match direction {
-                                    "In" => ports.push(IO::Input { msb, lsb }),
-                                    "Out" => ports.push(IO::Output { msb, lsb }),
-                                    "InOut" => ports.push(IO::InOut { msb, lsb }),
-                                    _ => panic!("Unsupported direction: {}", direction),
-                                }
+                                ports.push(Port {
+                                    dir: PortDir::from_str(direction).unwrap(),
+                                    name: port_name.to_string(),
+                                    msb,
+                                    lsb,
+                                });
                             }
                             "InterfacePort" => {
                                 panic!("Interface ports are not currently supported.")
