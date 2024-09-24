@@ -29,6 +29,10 @@ mod tests {
         );
             bar bar_inst(.*);
         endmodule
+        module baz #(
+            parameter P=13
+        );
+        endmodule
         ";
         let mut parameters = HashMap::new();
         parameters.insert("O".to_string(), "42".to_string());
