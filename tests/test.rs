@@ -3,13 +3,15 @@
 #[cfg(test)]
 mod tests {
     use slang_rs::*;
+    use std::collections::HashMap;
 
     #[test]
     fn test_extract_ports() {
         let verilog = "
         `define M 8
         module foo #(
-            parameter N=11
+            parameter N=11,
+            parameter O=12
         ) (
             input a,
             output [1:0] b,
@@ -22,12 +24,15 @@ mod tests {
             output signed [8:0] i,
             input unsigned [9:0] j,
             output bit [10:0] k,
-            inout wire [0:N] l
+            inout wire [0:N] l,
+            output wire [O-1:0] m
         );
             bar bar_inst(.*);
         endmodule
         ";
-        let definitions = extract_ports(verilog, true);
+        let mut parameters = HashMap::new();
+        parameters.insert("O".to_string(), "42".to_string());
+        let definitions = extract_ports(verilog, true, &parameters);
         println!("{:?}", definitions);
         assert_eq!(
             definitions["foo"],
@@ -103,6 +108,12 @@ mod tests {
                     name: "l".to_string(),
                     msb: 0,
                     lsb: 11
+                },
+                Port {
+                    dir: PortDir::Output,
+                    name: "m".to_string(),
+                    msb: 41,
+                    lsb: 0
                 }
             ]
         );
