@@ -32,8 +32,12 @@ pub struct Port {
     pub lsb: usize,
 }
 
-pub fn extract_ports(verilog: &str, ignore_unknown_modules: bool) -> HashMap<String, Vec<Port>> {
-    let result = crate::run_slang(verilog, ignore_unknown_modules).unwrap();
+pub fn extract_ports(
+    verilog: &str,
+    ignore_unknown_modules: bool,
+    parameters: &HashMap<String, String>,
+) -> HashMap<String, Vec<Port>> {
+    let result = crate::run_slang(verilog, ignore_unknown_modules, parameters).unwrap();
     extract_ports_from_value(&result)
 }
 
