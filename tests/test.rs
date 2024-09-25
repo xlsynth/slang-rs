@@ -3,11 +3,11 @@
 #[cfg(test)]
 mod tests {
     use slang_rs::*;
-    use std::collections::HashMap;
 
     #[test]
     fn test_extract_ports() {
-        let verilog = "
+        let verilog = str2tmpfile(
+            "
         `define M 8
         module foo #(
             parameter N=11,
@@ -32,11 +32,17 @@ mod tests {
         module baz #(
             parameter P=13
         );
-        endmodule
-        ";
-        let mut parameters = HashMap::new();
-        parameters.insert("O".to_string(), "42".to_string());
-        let definitions = extract_ports(verilog, true, &parameters);
+        endmodule",
+        )
+        .unwrap();
+
+        let cfg = SlangConfig {
+            sources: &[verilog.path().to_str().unwrap()],
+            parameters: &[("O", "42")],
+            ..Default::default()
+        };
+
+        let definitions = extract_ports(&cfg, false);
         println!("{:?}", definitions);
         assert_eq!(
             definitions["foo"],
@@ -44,82 +50,184 @@ mod tests {
                 Port {
                     dir: PortDir::Input,
                     name: "a".to_string(),
-                    msb: 0,
-                    lsb: 0
+                    dims: Dims {
+                        packed: vec![],
+                        unpacked: vec![]
+                    }
                 },
                 Port {
                     dir: PortDir::Output,
                     name: "b".to_string(),
-                    msb: 1,
-                    lsb: 0
+                    dims: Dims {
+                        packed: vec![(1, 0)],
+                        unpacked: vec![]
+                    }
                 },
                 Port {
                     dir: PortDir::Output,
                     name: "c".to_string(),
-                    msb: 2,
-                    lsb: 0
+                    dims: Dims {
+                        packed: vec![(2, 0)],
+                        unpacked: vec![]
+                    }
                 },
                 Port {
                     dir: PortDir::Input,
                     name: "d".to_string(),
-                    msb: 3,
-                    lsb: 0
+                    dims: Dims {
+                        packed: vec![(3, 0)],
+                        unpacked: vec![]
+                    }
                 },
                 Port {
                     dir: PortDir::Output,
                     name: "e".to_string(),
-                    msb: 4,
-                    lsb: 0
+                    dims: Dims {
+                        packed: vec![(4, 0)],
+                        unpacked: vec![]
+                    }
                 },
                 Port {
                     dir: PortDir::Output,
                     name: "f".to_string(),
-                    msb: 5,
-                    lsb: 0
+                    dims: Dims {
+                        packed: vec![(5, 0)],
+                        unpacked: vec![]
+                    }
                 },
                 Port {
                     dir: PortDir::Output,
                     name: "g".to_string(),
-                    msb: 6,
-                    lsb: 0
+                    dims: Dims {
+                        packed: vec![(6, 0)],
+                        unpacked: vec![]
+                    }
                 },
                 Port {
                     dir: PortDir::Input,
                     name: "h".to_string(),
-                    msb: 7,
-                    lsb: 0
+                    dims: Dims {
+                        packed: vec![(7, 0)],
+                        unpacked: vec![]
+                    }
                 },
                 Port {
                     dir: PortDir::Output,
                     name: "i".to_string(),
-                    msb: 8,
-                    lsb: 0
+                    dims: Dims {
+                        packed: vec![(8, 0)],
+                        unpacked: vec![]
+                    }
                 },
                 Port {
                     dir: PortDir::Input,
                     name: "j".to_string(),
-                    msb: 9,
-                    lsb: 0
+                    dims: Dims {
+                        packed: vec![(9, 0)],
+                        unpacked: vec![]
+                    }
                 },
                 Port {
                     dir: PortDir::Output,
                     name: "k".to_string(),
-                    msb: 10,
-                    lsb: 0
+                    dims: Dims {
+                        packed: vec![(10, 0)],
+                        unpacked: vec![]
+                    }
                 },
                 Port {
                     dir: PortDir::InOut,
                     name: "l".to_string(),
-                    msb: 0,
-                    lsb: 11
+                    dims: Dims {
+                        packed: vec![(0, 11)],
+                        unpacked: vec![]
+                    }
                 },
                 Port {
                     dir: PortDir::Output,
                     name: "m".to_string(),
-                    msb: 41,
-                    lsb: 0
+                    dims: Dims {
+                        packed: vec![(41, 0)],
+                        unpacked: vec![]
+                    }
                 }
             ]
         );
+    }
+
+    #[test]
+    fn test_ignore_struct() {
+        let verilog = str2tmpfile(
+            "
+        typedef struct {
+            logic [7:0] data;
+            logic valid;
+        } bus_t;
+
+        module foo (
+            input clk,
+            input bus_t bus
+        );
+        endmodule",
+        )
+        .unwrap();
+
+        let cfg = SlangConfig {
+            sources: &[verilog.path().to_str().unwrap()],
+            ..Default::default()
+        };
+
+        let definitions = extract_ports(&cfg, true);
+        println!("{:?}", definitions);
+        assert_eq!(
+            definitions["foo"],
+            vec![Port {
+                dir: PortDir::Input,
+                name: "clk".to_string(),
+                dims: Dims {
+                    packed: vec![],
+                    unpacked: vec![]
+                }
+            }]
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Unsupported type: struct")]
+    fn test_panic_on_unsupported() {
+        let verilog = str2tmpfile(
+            "
+        typedef struct {
+            logic [7:0] data;
+            logic valid;
+        } bus_t;
+
+        module foo (
+            input clk,
+            output bus_t bus
+        );
+        endmodule",
+        )
+        .unwrap();
+
+        let cfg = SlangConfig {
+            sources: &[verilog.path().to_str().unwrap()],
+            ..Default::default()
+        };
+
+        extract_ports(&cfg, false);
+    }
+
+    #[test]
+    #[should_panic(expected = "expected 'endmodule'")]
+    fn test_informative_parse_error() {
+        let verilog = str2tmpfile("module A;").unwrap();
+
+        let cfg = SlangConfig {
+            sources: &[verilog.path().to_str().unwrap()],
+            ..Default::default()
+        };
+
+        extract_ports(&cfg, false);
     }
 }

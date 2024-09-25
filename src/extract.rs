@@ -24,24 +24,37 @@ impl FromStr for PortDir {
     }
 }
 
+#[derive(Default, Debug, PartialEq)]
+pub struct Dims {
+    pub packed: Vec<(usize, usize)>,
+    pub unpacked: Vec<(usize, usize)>,
+}
+
+impl Dims {
+    pub fn new() -> Self {
+        Default::default()
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Port {
     pub dir: PortDir,
     pub name: String,
-    pub msb: usize,
-    pub lsb: usize,
+    pub dims: Dims,
 }
 
 pub fn extract_ports(
-    verilog: &str,
-    ignore_unknown_modules: bool,
-    parameters: &HashMap<String, String>,
+    cfg: &crate::SlangConfig,
+    skip_unsupported: bool,
 ) -> HashMap<String, Vec<Port>> {
-    let result = crate::run_slang(verilog, ignore_unknown_modules, parameters).unwrap();
-    extract_ports_from_value(&result)
+    let result = crate::run_slang(cfg).unwrap();
+    extract_ports_from_value(&result, skip_unsupported)
 }
 
-fn extract_ports_from_value(value: &Value) -> HashMap<String, Vec<Port>> {
+pub fn extract_ports_from_value(
+    value: &Value,
+    skip_unsupported: bool,
+) -> HashMap<String, Vec<Port>> {
     let mut ports_map = HashMap::new();
 
     if let Some(members) = value["design"]["members"].as_array() {
@@ -57,16 +70,25 @@ fn extract_ports_from_value(value: &Value) -> HashMap<String, Vec<Port>> {
                                 let port_name = instance_member["name"].as_str().unwrap();
                                 let direction = instance_member["direction"].as_str().unwrap();
                                 let type_str = instance_member["type"].as_str().unwrap();
-                                let (msb, lsb) = extract_msb_lsb(type_str);
-                                ports.push(Port {
-                                    dir: PortDir::from_str(direction).unwrap(),
-                                    name: port_name.to_string(),
-                                    msb,
-                                    lsb,
-                                });
+                                match extract_dims(type_str) {
+                                    Ok(dims) => {
+                                        ports.push(Port {
+                                            dir: PortDir::from_str(direction).unwrap(),
+                                            name: port_name.to_string(),
+                                            dims,
+                                        });
+                                    }
+                                    Err(e) => {
+                                        if !skip_unsupported {
+                                            panic!("{}", e);
+                                        }
+                                    }
+                                }
                             }
                             "InterfacePort" => {
-                                panic!("Interface ports are not currently supported.")
+                                if !skip_unsupported {
+                                    panic!("Interface ports are not currently supported.")
+                                }
                             }
                             _ => continue,
                         }
@@ -87,38 +109,64 @@ fn extract_ports_from_value(value: &Value) -> HashMap<String, Vec<Port>> {
     ports_map
 }
 
-fn extract_msb_lsb(type_str: &str) -> (usize, usize) {
-    if type_str.contains('$')
-        || type_str.contains("struct")
+fn extract_dims(type_str: &str) -> Result<Dims, String> {
+    if type_str.contains("struct")
         || type_str.contains("union")
         || type_str.contains("interface")
         || type_str.contains('(')
         || type_str.contains(')')
-        || (type_str.matches('[').count() > 1)
     {
-        panic!("Unsupported type: {}", type_str);
+        return Err(format!("Unsupported type: {}", type_str));
     }
 
-    // Extract the bit range from the type string logic[msb:lsb]
-    if let Some(start_idx) = type_str.find('[') {
-        if let Some(end_idx) = type_str.find(']') {
-            let range_str = &type_str[start_idx + 1..end_idx];
+    let mut dims = Dims::new();
+
+    // Split the type string into the base type and dimensions
+    let parts: Vec<&str> = type_str.split('$').collect();
+    let base_and_packed = parts.first().unwrap_or(&"");
+    let unpacked = parts.get(1).unwrap_or(&"");
+
+    // Extract packed dimensions
+    let packed_dims: Vec<&str> = base_and_packed.split('[').skip(1).collect();
+    for dim in packed_dims {
+        if let Some(end_idx) = dim.find(']') {
+            let range_str = &dim[..end_idx];
             let mut parts = range_str.split(':');
             if let (Some(msb_str), Some(lsb_str)) = (parts.next(), parts.next()) {
                 if let (Ok(msb), Ok(lsb)) = (
                     msb_str.trim().parse::<usize>(),
                     lsb_str.trim().parse::<usize>(),
                 ) {
-                    return (msb, lsb);
+                    dims.packed.push((msb, lsb));
                 } else {
-                    panic!("Invalid type: {}", type_str);
+                    return Err(format!("Invalid packed dimension: {}", range_str));
                 }
             } else {
-                panic!("Invalid type: {}", type_str);
+                return Err(format!("Invalid packed dimension: {}", range_str));
             }
         }
     }
 
-    // If we get to this point, this is a single bit type.
-    (0, 0)
+    // Extract unpacked dimensions
+    let unpacked_dims: Vec<&str> = unpacked.split('[').skip(1).collect();
+    for dim in unpacked_dims {
+        if let Some(end_idx) = dim.find(']') {
+            let range_str = &dim[..end_idx];
+            let mut parts = range_str.split(':');
+            if let (Some(msb_str), Some(lsb_str)) = (parts.next(), parts.next()) {
+                if let (Ok(msb), Ok(lsb)) = (
+                    msb_str.trim().parse::<usize>(),
+                    lsb_str.trim().parse::<usize>(),
+                ) {
+                    dims.unpacked.push((msb, lsb));
+                } else {
+                    return Err(format!("Invalid unpacked dimension: {}", range_str));
+                }
+            } else {
+                return Err(format!("Invalid unpacked dimension: {}", range_str));
+            }
+        }
+    }
+
+    Ok(dims)
 }
