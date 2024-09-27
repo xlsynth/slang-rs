@@ -21,13 +21,9 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Download Slang
-        uses: actions/download-artifact@v3
-        with:
-          name: slang
-          path: './'
-
-      - name: Make Slang Executable
-        run: chmod +x slang
+        run: |
+          curl -L -o slang "https://github.com/xlsynth/slang-rs/releases/download/ci/slang"
+          chmod +x slang
 
       - name: Run tests
         run: export SLANG_PATH=`realpath slang` && cargo test
