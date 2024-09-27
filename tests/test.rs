@@ -15,7 +15,7 @@ mod tests {
             parameter O=12
         ) (
             input a,
-            output [1:0][11:0] b,
+            output [1:0][11:0] b [0:111][1111:0],
             output wire [2:0] c,
             input wire logic [3:0] d,
             output reg [4:0] e,
@@ -51,7 +51,8 @@ mod tests {
                     dir: PortDir::Input,
                     name: "a".to_string(),
                     ty: Type::Logic {
-                        packed_dimensions: vec![]
+                        packed_dimensions: vec![],
+                        unpacked_dimensions: vec![],
                     },
                 },
                 Port {
@@ -62,6 +63,10 @@ mod tests {
                             Range { msb: 1, lsb: 0 },
                             Range { msb: 11, lsb: 0 }
                         ],
+                        unpacked_dimensions: vec![
+                            Range { msb: 0, lsb: 111 },
+                            Range { msb: 1111, lsb: 0 }
+                        ],
                     },
                 },
                 Port {
@@ -69,6 +74,7 @@ mod tests {
                     name: "c".to_string(),
                     ty: Type::Logic {
                         packed_dimensions: vec![Range { msb: 2, lsb: 0 }],
+                        unpacked_dimensions: vec![],
                     },
                 },
                 Port {
@@ -76,6 +82,7 @@ mod tests {
                     name: "d".to_string(),
                     ty: Type::Logic {
                         packed_dimensions: vec![Range { msb: 3, lsb: 0 }],
+                        unpacked_dimensions: vec![],
                     },
                 },
                 Port {
@@ -83,6 +90,7 @@ mod tests {
                     name: "e".to_string(),
                     ty: Type::Logic {
                         packed_dimensions: vec![Range { msb: 4, lsb: 0 }],
+                        unpacked_dimensions: vec![],
                     },
                 },
                 Port {
@@ -90,6 +98,7 @@ mod tests {
                     name: "f".to_string(),
                     ty: Type::Logic {
                         packed_dimensions: vec![Range { msb: 5, lsb: 0 }],
+                        unpacked_dimensions: vec![],
                     },
                 },
                 Port {
@@ -97,6 +106,7 @@ mod tests {
                     name: "g".to_string(),
                     ty: Type::Logic {
                         packed_dimensions: vec![Range { msb: 6, lsb: 0 }],
+                        unpacked_dimensions: vec![],
                     },
                 },
                 Port {
@@ -104,6 +114,7 @@ mod tests {
                     name: "h".to_string(),
                     ty: Type::Logic {
                         packed_dimensions: vec![Range { msb: 7, lsb: 0 }],
+                        unpacked_dimensions: vec![],
                     },
                 },
                 Port {
@@ -111,6 +122,7 @@ mod tests {
                     name: "i".to_string(),
                     ty: Type::Logic {
                         packed_dimensions: vec![Range { msb: 8, lsb: 0 }],
+                        unpacked_dimensions: vec![],
                     },
                 },
                 Port {
@@ -118,6 +130,7 @@ mod tests {
                     name: "j".to_string(),
                     ty: Type::Logic {
                         packed_dimensions: vec![Range { msb: 9, lsb: 0 }],
+                        unpacked_dimensions: vec![],
                     },
                 },
                 Port {
@@ -125,6 +138,7 @@ mod tests {
                     name: "k".to_string(),
                     ty: Type::Logic {
                         packed_dimensions: vec![Range { msb: 10, lsb: 0 }],
+                        unpacked_dimensions: vec![],
                     },
                 },
                 Port {
@@ -132,6 +146,7 @@ mod tests {
                     name: "l".to_string(),
                     ty: Type::Logic {
                         packed_dimensions: vec![Range { msb: 0, lsb: 11 }],
+                        unpacked_dimensions: vec![],
                     },
                 },
                 Port {
@@ -139,6 +154,7 @@ mod tests {
                     name: "m".to_string(),
                     ty: Type::Logic {
                         packed_dimensions: vec![Range { msb: 41, lsb: 0 }],
+                        unpacked_dimensions: vec![],
                     },
                 },
             ]
@@ -176,6 +192,7 @@ mod tests {
                 name: "clk".to_string(),
                 ty: Type::Logic {
                     packed_dimensions: vec![],
+                    unpacked_dimensions: vec![],
                 },
             }]
         );
@@ -240,6 +257,7 @@ mod tests {
                     name: "clk".to_string(),
                     ty: Type::Logic {
                         packed_dimensions: vec![],
+                        unpacked_dimensions: vec![],
                     },
                 },
                 Port {
@@ -252,16 +270,19 @@ mod tests {
                                 name: "data".to_string(),
                                 ty: Type::Logic {
                                     packed_dimensions: vec![Range { msb: 7, lsb: 0 }],
+                                    unpacked_dimensions: vec![],
                                 },
                             },
                             Field {
                                 name: "valid".to_string(),
                                 ty: Type::Logic {
                                     packed_dimensions: vec![],
+                                    unpacked_dimensions: vec![],
                                 },
                             },
                         ],
                         packed_dimensions: vec![],
+                        unpacked_dimensions: vec![],
                     },
                 },
             ]
@@ -301,6 +322,7 @@ mod tests {
                     name: "clk".to_string(),
                     ty: Type::Logic {
                         packed_dimensions: vec![],
+                        unpacked_dimensions: vec![],
                     },
                 },
                 Port {
@@ -321,6 +343,7 @@ mod tests {
                             },
                         ],
                         packed_dimensions: vec![],
+                        unpacked_dimensions: vec![],
                     },
                 },
             ]

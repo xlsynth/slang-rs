@@ -13,16 +13,19 @@ struct DataTypeParser;
 pub enum Type {
     Logic {
         packed_dimensions: Vec<Range>,
+        unpacked_dimensions: Vec<Range>,
     },
     Struct {
         name: String,
         fields: Vec<Field>,
         packed_dimensions: Vec<Range>,
+        unpacked_dimensions: Vec<Range>,
     },
     Enum {
         name: String,
         variants: Vec<Variant>,
         packed_dimensions: Vec<Range>,
+        unpacked_dimensions: Vec<Range>,
     },
 }
 
@@ -62,25 +65,39 @@ fn build_field_type(pair: pest::iterators::Pair<Rule>) -> Type {
 }
 
 fn build_logic_type(pair: pest::iterators::Pair<Rule>) -> Type {
-    let inner = pair.into_inner();
+    let inner = pair.into_inner().next().unwrap().into_inner();
     let mut packed_dimensions = Vec::new();
+    let mut unpacked_dimensions = Vec::new();
 
     for inner_pair in inner {
-        if inner_pair.as_rule() == Rule::packed_dimensions {
-            for dim_pair in inner_pair.into_inner() {
-                let range = build_range(dim_pair.into_inner().next().unwrap());
-                packed_dimensions.push(range);
+        match inner_pair.as_rule() {
+            Rule::packed_dimensions => {
+                for dim_pair in inner_pair.into_inner() {
+                    let range = build_range(dim_pair.into_inner().next().unwrap());
+                    packed_dimensions.push(range);
+                }
             }
+            Rule::unpacked_dimensions => {
+                for dim_pair in inner_pair.into_inner() {
+                    let range = build_range(dim_pair.into_inner().next().unwrap());
+                    unpacked_dimensions.push(range);
+                }
+            }
+            _ => {}
         }
     }
 
-    Type::Logic { packed_dimensions }
+    Type::Logic {
+        packed_dimensions,
+        unpacked_dimensions,
+    }
 }
 
 fn build_struct_type(pair: pest::iterators::Pair<Rule>) -> Type {
     let inner = pair.into_inner();
     let mut fields = Vec::new();
     let mut packed_dimensions = Vec::new();
+    let mut unpacked_dimensions = Vec::new();
     let mut name = String::new();
 
     for inner_pair in inner {
@@ -102,6 +119,12 @@ fn build_struct_type(pair: pest::iterators::Pair<Rule>) -> Type {
                     packed_dimensions.push(range);
                 }
             }
+            Rule::unpacked_dimensions => {
+                for dim_pair in inner_pair.into_inner() {
+                    let range = build_range(dim_pair.into_inner().next().unwrap());
+                    unpacked_dimensions.push(range);
+                }
+            }
             _ => {}
         }
     }
@@ -110,6 +133,7 @@ fn build_struct_type(pair: pest::iterators::Pair<Rule>) -> Type {
         name,
         fields,
         packed_dimensions,
+        unpacked_dimensions,
     }
 }
 
@@ -117,6 +141,7 @@ fn build_enum_type(pair: pest::iterators::Pair<Rule>) -> Type {
     let inner = pair.into_inner();
     let mut variants = Vec::new();
     let mut packed_dimensions = Vec::new();
+    let mut unpacked_dimensions = Vec::new();
     let mut name = String::new();
 
     for inner_pair in inner {
@@ -138,6 +163,12 @@ fn build_enum_type(pair: pest::iterators::Pair<Rule>) -> Type {
                     packed_dimensions.push(range);
                 }
             }
+            Rule::unpacked_dimensions => {
+                for dim_pair in inner_pair.into_inner() {
+                    let range = build_range(dim_pair.into_inner().next().unwrap());
+                    unpacked_dimensions.push(range);
+                }
+            }
             _ => {}
         }
     }
@@ -146,6 +177,7 @@ fn build_enum_type(pair: pest::iterators::Pair<Rule>) -> Type {
         name,
         variants,
         packed_dimensions,
+        unpacked_dimensions,
     }
 }
 
@@ -211,6 +243,7 @@ mod tests {
                     },
                 ],
                 packed_dimensions: vec![],
+                unpacked_dimensions: vec![],
             }
         );
     }
