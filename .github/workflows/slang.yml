@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: Apache-2.0
+
+name: Build Slang
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Slang Release
+        run: |
+          curl -L -o source.tar.gz "https://github.com/MikePopoloski/slang/archive/refs/tags/v6.0.tar.gz"
+
+      - name: Extract Tarball
+        run: |
+          mkdir source
+          tar -xzf source.tar.gz -C source --strip-components=1
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake
+
+      - name: Build Slang
+        working-directory: source
+        run: |
+          cmake -B build
+          cmake --build build -j8
+
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: slang
+          path: 'source/build/bin/slang'

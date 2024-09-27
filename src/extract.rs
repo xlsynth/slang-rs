@@ -4,11 +4,22 @@ use serde_json::Value;
 use std::collections::{hash_map::Entry, HashMap};
 use std::str::FromStr;
 
+mod type_extract;
+use type_extract::parse_type_definition;
+pub use type_extract::{Field, Range, Type};
+
 #[derive(Debug, PartialEq)]
 pub enum PortDir {
     Input,
     Output,
     InOut,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Port {
+    pub dir: PortDir,
+    pub name: String,
+    pub ty: Type,
 }
 
 impl FromStr for PortDir {
@@ -24,24 +35,18 @@ impl FromStr for PortDir {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Port {
-    pub dir: PortDir,
-    pub name: String,
-    pub msb: usize,
-    pub lsb: usize,
-}
-
 pub fn extract_ports(
-    verilog: &str,
-    ignore_unknown_modules: bool,
-    parameters: &HashMap<String, String>,
+    cfg: &crate::SlangConfig,
+    skip_unsupported: bool,
 ) -> HashMap<String, Vec<Port>> {
-    let result = crate::run_slang(verilog, ignore_unknown_modules, parameters).unwrap();
-    extract_ports_from_value(&result)
+    let result = crate::run_slang(cfg).unwrap();
+    extract_ports_from_value(&result, skip_unsupported)
 }
 
-fn extract_ports_from_value(value: &Value) -> HashMap<String, Vec<Port>> {
+pub fn extract_ports_from_value(
+    value: &Value,
+    skip_unsupported: bool,
+) -> HashMap<String, Vec<Port>> {
     let mut ports_map = HashMap::new();
 
     if let Some(members) = value["design"]["members"].as_array() {
@@ -57,16 +62,26 @@ fn extract_ports_from_value(value: &Value) -> HashMap<String, Vec<Port>> {
                                 let port_name = instance_member["name"].as_str().unwrap();
                                 let direction = instance_member["direction"].as_str().unwrap();
                                 let type_str = instance_member["type"].as_str().unwrap();
-                                let (msb, lsb) = extract_msb_lsb(type_str);
+                                let ty = match parse_type_definition(type_str) {
+                                    Ok(ty) => ty,
+                                    Err(e) => {
+                                        if !skip_unsupported {
+                                            panic!("{}", e);
+                                        } else {
+                                            continue;
+                                        }
+                                    }
+                                };
                                 ports.push(Port {
                                     dir: PortDir::from_str(direction).unwrap(),
                                     name: port_name.to_string(),
-                                    msb,
-                                    lsb,
+                                    ty,
                                 });
                             }
                             "InterfacePort" => {
-                                panic!("Interface ports are not currently supported.")
+                                if !skip_unsupported {
+                                    panic!("Interface ports are not currently supported.")
+                                }
                             }
                             _ => continue,
                         }
@@ -85,40 +100,4 @@ fn extract_ports_from_value(value: &Value) -> HashMap<String, Vec<Port>> {
     }
 
     ports_map
-}
-
-fn extract_msb_lsb(type_str: &str) -> (usize, usize) {
-    if type_str.contains('$')
-        || type_str.contains("struct")
-        || type_str.contains("union")
-        || type_str.contains("interface")
-        || type_str.contains('(')
-        || type_str.contains(')')
-        || (type_str.matches('[').count() > 1)
-    {
-        panic!("Unsupported type: {}", type_str);
-    }
-
-    // Extract the bit range from the type string logic[msb:lsb]
-    if let Some(start_idx) = type_str.find('[') {
-        if let Some(end_idx) = type_str.find(']') {
-            let range_str = &type_str[start_idx + 1..end_idx];
-            let mut parts = range_str.split(':');
-            if let (Some(msb_str), Some(lsb_str)) = (parts.next(), parts.next()) {
-                if let (Ok(msb), Ok(lsb)) = (
-                    msb_str.trim().parse::<usize>(),
-                    lsb_str.trim().parse::<usize>(),
-                ) {
-                    return (msb, lsb);
-                } else {
-                    panic!("Invalid type: {}", type_str);
-                }
-            } else {
-                panic!("Invalid type: {}", type_str);
-            }
-        }
-    }
-
-    // If we get to this point, this is a single bit type.
-    (0, 0)
 }
