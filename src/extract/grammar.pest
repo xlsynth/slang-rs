@@ -16,10 +16,18 @@ logic_type = { ( "logic" | "reg" | "bit" ) ~ ("signed")? ~ packed_dimensions }
 
 struct_type = { "struct" ~ ("packed")? ~ "{" ~ field_list ~ "}" ~ identifier ~ packed_dimensions }
 
-allowed_type = { logic_type | struct_type }
+enum_type = { "enum" ~ "{" ~ variant_list ~ "}" ~ identifier ~ packed_dimensions }
+
+allowed_type = { logic_type | struct_type | enum_type }
 
 field = { allowed_type ~ identifier }
 
 field_list = { field ~ (";" ~ field)* ~ (";")? }
+
+verilog_decimal = { ("-")? ~ number ~ "'" ~ ("s")? ~ "d" ~ number }
+
+variant = { identifier ~ "=" ~ verilog_decimal }
+
+variant_list = { variant ~ ("," ~ variant)* ~ (";")? }
 
 top = { allowed_type ~ EOI }

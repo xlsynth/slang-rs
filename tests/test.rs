@@ -2,6 +2,7 @@
 
 #[cfg(test)]
 mod tests {
+    use num_bigint::BigInt;
     use slang_rs::*;
 
     #[test]
@@ -258,6 +259,65 @@ mod tests {
                                 ty: Type::Logic {
                                     packed_dimensions: vec![],
                                 },
+                            },
+                        ],
+                        packed_dimensions: vec![],
+                    },
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_enum() {
+        let verilog = str2tmpfile(
+            "
+        typedef enum logic [15:0] {
+            A=1234,
+            B=2345
+        } enum_t;
+
+        module foo (
+            input clk,
+            output enum_t data
+        );
+        endmodule",
+        )
+        .unwrap();
+
+        let cfg = SlangConfig {
+            sources: &[verilog.path().to_str().unwrap()],
+            ..Default::default()
+        };
+
+        let definitions = extract_ports(&cfg, false);
+        println!("{:?}", definitions);
+
+        assert_eq!(
+            definitions["foo"],
+            vec![
+                Port {
+                    dir: PortDir::Input,
+                    name: "clk".to_string(),
+                    ty: Type::Logic {
+                        packed_dimensions: vec![],
+                    },
+                },
+                Port {
+                    dir: PortDir::Output,
+                    name: "data".to_string(),
+                    ty: Type::Enum {
+                        name: "enum_t".to_string(),
+                        variants: vec![
+                            Variant {
+                                name: "A".to_string(),
+                                width: 16,
+                                value: BigInt::from(1234),
+                            },
+                            Variant {
+                                name: "B".to_string(),
+                                width: 16,
+                                value: BigInt::from(2345),
                             },
                         ],
                         packed_dimensions: vec![],
