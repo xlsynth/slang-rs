@@ -310,6 +310,7 @@ name = "slang-rs"
 version = "0.5.0"
 dependencies = [
  "num-bigint",
+ "num-traits",
  "pest",
  "pest_derive",
  "regex",

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use num_bigint::BigInt;
+use num_bigint::{BigInt, BigUint, Sign};
+use num_traits::Zero;
+
 use pest::Parser;
 use pest_derive::Parser;
 use std::error::Error;
@@ -154,6 +156,7 @@ fn build_struct_type(pair: pest::iterators::Pair<Rule>) -> Type {
 
 fn build_enum_type(pair: pest::iterators::Pair<Rule>) -> Type {
     let inner = pair.into_inner();
+
     let mut variants = Vec::new();
     let mut packed_dimensions = Vec::new();
     let mut unpacked_dimensions = Vec::new();
@@ -209,17 +212,36 @@ fn build_field(pair: pest::iterators::Pair<Rule>) -> Field {
 
 fn build_variant(pair: pest::iterators::Pair<Rule>) -> Variant {
     let mut inner = pair.into_inner();
+
     let name = inner.next().unwrap().as_str().to_string();
-    let mut value_inner = inner.next().unwrap().into_inner();
-    let width = value_inner
-        .next()
-        .unwrap()
-        .as_str()
-        .parse::<usize>()
-        .unwrap();
-    let value_str = value_inner.next().unwrap().as_str();
-    let value = BigInt::parse_bytes(value_str.as_bytes(), 10).unwrap();
-    Variant { name, width, value }
+
+    let mut inner_inner = inner.next().unwrap().into_inner();
+
+    let mut width = inner_inner.next().unwrap();
+    let mut negative = false;
+    if width.as_rule() == Rule::negative_sign {
+        negative = true;
+        width = inner_inner.next().unwrap();
+    }
+
+    let width = width.as_str().parse::<usize>().unwrap();
+
+    let magnitude_str = inner_inner.next().unwrap().as_str();
+    let magnitude = BigUint::parse_bytes(magnitude_str.as_bytes(), 10).unwrap();
+
+    let sign = if magnitude.is_zero() {
+        Sign::NoSign
+    } else if negative {
+        Sign::Minus
+    } else {
+        Sign::Plus
+    };
+
+    Variant {
+        name,
+        width,
+        value: BigInt::from_biguint(sign, magnitude),
+    }
 }
 
 fn build_range(pair: pest::iterators::Pair<Rule>) -> Range {
@@ -235,7 +257,7 @@ mod tests {
 
     #[test]
     fn test_enum() {
-        let type_def = parse_type_definition("enum{a=42'd1,b=42'd2,c=42'd3}my_enum").unwrap();
+        let type_def = parse_type_definition("enum{a=42'd1,b=-42'sd2,c=42'd3}my_enum").unwrap();
         assert_eq!(
             type_def,
             Type::Enum {
@@ -249,7 +271,7 @@ mod tests {
                     Variant {
                         name: "b".to_string(),
                         width: 42,
-                        value: BigInt::from(2),
+                        value: BigInt::from(-2),
                     },
                     Variant {
                         name: "c".to_string(),
