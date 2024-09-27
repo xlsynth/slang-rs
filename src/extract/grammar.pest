@@ -14,7 +14,9 @@ unpacked_dimensions = { packed_dimension* }
 
 dimensions = { packed_dimensions ~ ( "$" ~ unpacked_dimensions )? }
 
-logic_type = { ( "logic" | "reg" | "bit" ) ~ ("signed")? ~ dimensions }
+signed_modifier = { "signed" }
+
+logic_type = { ( "logic" | "reg" | "bit" ) ~ signed_modifier? ~ dimensions }
 
 struct_type = { "struct" ~ ("packed")? ~ "{" ~ field_list ~ "}" ~ identifier ~ dimensions }
 

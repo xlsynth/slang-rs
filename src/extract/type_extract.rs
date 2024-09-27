@@ -65,24 +65,33 @@ fn build_field_type(pair: pest::iterators::Pair<Rule>) -> Type {
 }
 
 fn build_logic_type(pair: pest::iterators::Pair<Rule>) -> Type {
-    let inner = pair.into_inner().next().unwrap().into_inner();
+    let inner = pair.into_inner();
     let mut packed_dimensions = Vec::new();
     let mut unpacked_dimensions = Vec::new();
 
     for inner_pair in inner {
         match inner_pair.as_rule() {
-            Rule::packed_dimensions => {
-                for dim_pair in inner_pair.into_inner() {
-                    let range = build_range(dim_pair.into_inner().next().unwrap());
-                    packed_dimensions.push(range);
+            Rule::dimensions => {
+                let inner_inner = inner_pair.into_inner();
+                for inner_inner_pair in inner_inner {
+                    match inner_inner_pair.as_rule() {
+                        Rule::packed_dimensions => {
+                            for dim_pair in inner_inner_pair.into_inner() {
+                                let range = build_range(dim_pair.into_inner().next().unwrap());
+                                packed_dimensions.push(range);
+                            }
+                        }
+                        Rule::unpacked_dimensions => {
+                            for dim_pair in inner_inner_pair.into_inner() {
+                                let range = build_range(dim_pair.into_inner().next().unwrap());
+                                unpacked_dimensions.push(range);
+                            }
+                        }
+                        _ => {}
+                    }
                 }
             }
-            Rule::unpacked_dimensions => {
-                for dim_pair in inner_pair.into_inner() {
-                    let range = build_range(dim_pair.into_inner().next().unwrap());
-                    unpacked_dimensions.push(range);
-                }
-            }
+            Rule::signed_modifier => {}
             _ => {}
         }
     }
