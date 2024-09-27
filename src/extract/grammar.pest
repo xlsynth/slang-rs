@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
 
 identifier = @{ (ASCII_ALPHANUMERIC | "_")+ }
