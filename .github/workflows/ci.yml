@@ -20,5 +20,14 @@ jobs:
       - name: Set up Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
 
+      - name: Download Slang
+        uses: actions/download-artifact@v3
+        with:
+          name: slang
+          path: './'
+
+      - name: Make Slang Executable
+        run: chmod +x slang
+
       - name: Run tests
-        run: cargo test
+        run: export SLANG_PATH=`realpath slang` && cargo test
