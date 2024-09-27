@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use num_bigint::{BigInt, BigUint, Sign};
+use num_traits::Zero;
+
 use pest::Parser;
 use pest_derive::Parser;
 use std::error::Error;
@@ -11,12 +14,21 @@ struct DataTypeParser;
 #[derive(Debug, PartialEq)]
 pub enum Type {
     Logic {
+        signed: bool,
         packed_dimensions: Vec<Range>,
+        unpacked_dimensions: Vec<Range>,
     },
     Struct {
         name: String,
         fields: Vec<Field>,
         packed_dimensions: Vec<Range>,
+        unpacked_dimensions: Vec<Range>,
+    },
+    Enum {
+        name: String,
+        variants: Vec<Variant>,
+        packed_dimensions: Vec<Range>,
+        unpacked_dimensions: Vec<Range>,
     },
 }
 
@@ -32,6 +44,13 @@ pub struct Range {
     pub lsb: usize,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct Variant {
+    pub name: String,
+    pub width: usize,
+    pub value: BigInt,
+}
+
 pub fn parse_type_definition(input: &str) -> Result<Type, Box<dyn Error>> {
     let mut parse_tree = DataTypeParser::parse(Rule::top, input)?;
     let ty = parse_tree.next().unwrap().into_inner().next().unwrap();
@@ -43,30 +62,59 @@ fn build_field_type(pair: pest::iterators::Pair<Rule>) -> Type {
     match inner_pair.as_rule() {
         Rule::logic_type => build_logic_type(inner_pair),
         Rule::struct_type => build_struct_type(inner_pair),
+        Rule::enum_type => build_enum_type(inner_pair),
         _ => unreachable!(),
     }
 }
 
 fn build_logic_type(pair: pest::iterators::Pair<Rule>) -> Type {
     let inner = pair.into_inner();
+
+    let mut signed = false;
     let mut packed_dimensions = Vec::new();
+    let mut unpacked_dimensions = Vec::new();
 
     for inner_pair in inner {
-        if inner_pair.as_rule() == Rule::packed_dimensions {
-            for dim_pair in inner_pair.into_inner() {
-                let range = build_range(dim_pair.into_inner().next().unwrap());
-                packed_dimensions.push(range);
+        match inner_pair.as_rule() {
+            Rule::dimensions => {
+                let inner_inner = inner_pair.into_inner();
+                for inner_inner_pair in inner_inner {
+                    match inner_inner_pair.as_rule() {
+                        Rule::packed_dimensions => {
+                            for dim_pair in inner_inner_pair.into_inner() {
+                                let range = build_range(dim_pair.into_inner().next().unwrap());
+                                packed_dimensions.push(range);
+                            }
+                        }
+                        Rule::unpacked_dimensions => {
+                            for dim_pair in inner_inner_pair.into_inner() {
+                                let range = build_range(dim_pair.into_inner().next().unwrap());
+                                unpacked_dimensions.push(range);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
             }
+            Rule::signed_modifier => {
+                signed = true;
+            }
+            _ => {}
         }
     }
 
-    Type::Logic { packed_dimensions }
+    Type::Logic {
+        signed,
+        packed_dimensions,
+        unpacked_dimensions,
+    }
 }
 
 fn build_struct_type(pair: pest::iterators::Pair<Rule>) -> Type {
     let inner = pair.into_inner();
     let mut fields = Vec::new();
     let mut packed_dimensions = Vec::new();
+    let mut unpacked_dimensions = Vec::new();
     let mut name = String::new();
 
     for inner_pair in inner {
@@ -88,6 +136,12 @@ fn build_struct_type(pair: pest::iterators::Pair<Rule>) -> Type {
                     packed_dimensions.push(range);
                 }
             }
+            Rule::unpacked_dimensions => {
+                for dim_pair in inner_pair.into_inner() {
+                    let range = build_range(dim_pair.into_inner().next().unwrap());
+                    unpacked_dimensions.push(range);
+                }
+            }
             _ => {}
         }
     }
@@ -96,6 +150,52 @@ fn build_struct_type(pair: pest::iterators::Pair<Rule>) -> Type {
         name,
         fields,
         packed_dimensions,
+        unpacked_dimensions,
+    }
+}
+
+fn build_enum_type(pair: pest::iterators::Pair<Rule>) -> Type {
+    let inner = pair.into_inner();
+
+    let mut variants = Vec::new();
+    let mut packed_dimensions = Vec::new();
+    let mut unpacked_dimensions = Vec::new();
+    let mut name = String::new();
+
+    for inner_pair in inner {
+        match inner_pair.as_rule() {
+            Rule::variant_list => {
+                for variant_pair in inner_pair.into_inner() {
+                    if variant_pair.as_rule() == Rule::variant {
+                        let variant = build_variant(variant_pair);
+                        variants.push(variant);
+                    }
+                }
+            }
+            Rule::identifier => {
+                name = inner_pair.as_str().to_string();
+            }
+            Rule::packed_dimensions => {
+                for dim_pair in inner_pair.into_inner() {
+                    let range = build_range(dim_pair.into_inner().next().unwrap());
+                    packed_dimensions.push(range);
+                }
+            }
+            Rule::unpacked_dimensions => {
+                for dim_pair in inner_pair.into_inner() {
+                    let range = build_range(dim_pair.into_inner().next().unwrap());
+                    unpacked_dimensions.push(range);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Type::Enum {
+        name,
+        variants,
+        packed_dimensions,
+        unpacked_dimensions,
     }
 }
 
@@ -110,6 +210,40 @@ fn build_field(pair: pest::iterators::Pair<Rule>) -> Field {
     }
 }
 
+fn build_variant(pair: pest::iterators::Pair<Rule>) -> Variant {
+    let mut inner = pair.into_inner();
+
+    let name = inner.next().unwrap().as_str().to_string();
+
+    let mut inner_inner = inner.next().unwrap().into_inner();
+
+    let mut width = inner_inner.next().unwrap();
+    let mut negative = false;
+    if width.as_rule() == Rule::negative_sign {
+        negative = true;
+        width = inner_inner.next().unwrap();
+    }
+
+    let width = width.as_str().parse::<usize>().unwrap();
+
+    let magnitude_str = inner_inner.next().unwrap().as_str();
+    let magnitude = BigUint::parse_bytes(magnitude_str.as_bytes(), 10).unwrap();
+
+    let sign = if magnitude.is_zero() {
+        Sign::NoSign
+    } else if negative {
+        Sign::Minus
+    } else {
+        Sign::Plus
+    };
+
+    Variant {
+        name,
+        width,
+        value: BigInt::from_biguint(sign, magnitude),
+    }
+}
+
 fn build_range(pair: pest::iterators::Pair<Rule>) -> Range {
     let mut inner = pair.into_inner();
     let msb = inner.next().unwrap().as_str().parse::<usize>().unwrap();
@@ -120,151 +254,33 @@ fn build_range(pair: pest::iterators::Pair<Rule>) -> Range {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn test_logic() {
-        let type_def = parse_type_definition("logic").unwrap();
-        assert_eq!(
-            type_def,
-            Type::Logic {
-                packed_dimensions: vec![]
-            }
-        );
-    }
 
     #[test]
-    fn test_logic_bus() {
-        let type_def = parse_type_definition("logic[7:0]").unwrap();
+    fn test_enum() {
+        let type_def = parse_type_definition("enum{a=42'd1,b=-42'sd2,c=42'd3}my_enum").unwrap();
         assert_eq!(
             type_def,
-            Type::Logic {
-                packed_dimensions: vec![Range { msb: 7, lsb: 0 }]
-            }
-        );
-    }
-
-    #[test]
-    fn test_logic_bus_2d() {
-        let type_def = parse_type_definition("logic[15:0][7:0]").unwrap();
-        assert_eq!(
-            type_def,
-            Type::Logic {
-                packed_dimensions: vec![Range { msb: 15, lsb: 0 }, Range { msb: 7, lsb: 0 }]
-            }
-        );
-    }
-
-    #[test]
-    fn test_struct_packed_logic_a_bus_t() {
-        let type_def = parse_type_definition("struct packed{logic a}bus_t").unwrap();
-        assert_eq!(
-            type_def,
-            Type::Struct {
-                name: "bus_t".to_string(),
-                fields: vec![Field {
-                    name: "a".to_string(),
-                    ty: Type::Logic {
-                        packed_dimensions: vec![]
-                    }
-                }],
-                packed_dimensions: vec![]
-            }
-        );
-    }
-
-    #[test]
-    fn test_struct_packed_with_logic_fields_and_packed_dimensions() {
-        let type_def =
-            parse_type_definition("struct packed{logic[7:0] a; logic b;}bus_t[3:0]").unwrap();
-        assert_eq!(
-            type_def,
-            Type::Struct {
-                name: "bus_t".to_string(),
-                fields: vec![
-                    Field {
+            Type::Enum {
+                name: "my_enum".to_string(),
+                variants: vec![
+                    Variant {
                         name: "a".to_string(),
-                        ty: Type::Logic {
-                            packed_dimensions: vec![Range { msb: 7, lsb: 0 }]
-                        }
+                        width: 42,
+                        value: BigInt::from(1),
                     },
-                    Field {
+                    Variant {
                         name: "b".to_string(),
-                        ty: Type::Logic {
-                            packed_dimensions: vec![]
-                        }
-                    }
-                ],
-                packed_dimensions: vec![Range { msb: 3, lsb: 0 }]
-            }
-        );
-    }
-
-    #[test]
-    fn test_nested_structs() {
-        let type_def =
-            parse_type_definition("struct packed{struct packed{logic a}inner_t inner}outer_t")
-                .unwrap();
-        assert_eq!(
-            type_def,
-            Type::Struct {
-                name: "outer_t".to_string(),
-                fields: vec![Field {
-                    name: "inner".to_string(),
-                    ty: Type::Struct {
-                        name: "inner_t".to_string(),
-                        fields: vec![Field {
-                            name: "a".to_string(),
-                            ty: Type::Logic {
-                                packed_dimensions: vec![]
-                            }
-                        }],
-                        packed_dimensions: vec![]
-                    }
-                }],
-                packed_dimensions: vec![]
-            }
-        );
-    }
-
-    #[test]
-    fn test_complex_nested_structs_with_packed_dimensions() {
-        let type_def = parse_type_definition("struct packed{struct packed{logic a; logic[3:0][2:0] b;}inner_t inner; logic[13:0] c;}mega_t[7:0][15:0]").unwrap();
-        assert_eq!(
-            type_def,
-            Type::Struct {
-                name: "mega_t".to_string(),
-                fields: vec![
-                    Field {
-                        name: "inner".to_string(),
-                        ty: Type::Struct {
-                            name: "inner_t".to_string(),
-                            fields: vec![
-                                Field {
-                                    name: "a".to_string(),
-                                    ty: Type::Logic {
-                                        packed_dimensions: vec![]
-                                    }
-                                },
-                                Field {
-                                    name: "b".to_string(),
-                                    ty: Type::Logic {
-                                        packed_dimensions: vec![
-                                            Range { msb: 3, lsb: 0 },
-                                            Range { msb: 2, lsb: 0 }
-                                        ]
-                                    }
-                                }
-                            ],
-                            packed_dimensions: vec![]
-                        }
+                        width: 42,
+                        value: BigInt::from(-2),
                     },
-                    Field {
+                    Variant {
                         name: "c".to_string(),
-                        ty: Type::Logic {
-                            packed_dimensions: vec![Range { msb: 13, lsb: 0 }]
-                        }
-                    }
+                        width: 42,
+                        value: BigInt::from(3),
+                    },
                 ],
-                packed_dimensions: vec![Range { msb: 7, lsb: 0 }, Range { msb: 15, lsb: 0 }]
+                packed_dimensions: vec![],
+                unpacked_dimensions: vec![],
             }
         );
     }

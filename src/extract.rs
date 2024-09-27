@@ -6,7 +6,7 @@ use std::str::FromStr;
 
 mod type_extract;
 use type_extract::parse_type_definition;
-pub use type_extract::{Field, Range, Type};
+pub use type_extract::{Field, Range, Type, Variant};
 
 #[derive(Debug, PartialEq)]
 pub enum PortDir {

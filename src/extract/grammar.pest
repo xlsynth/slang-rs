@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
-
 WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
 
 identifier = @{ (ASCII_ALPHANUMERIC | "_")+ }
@@ -12,14 +10,30 @@ packed_dimension = { "[" ~ range ~ "]" }
 
 packed_dimensions = { packed_dimension* }
 
-logic_type = { ( "logic" | "reg" | "bit" ) ~ ("signed")? ~ packed_dimensions }
+unpacked_dimensions = { packed_dimension* }
 
-struct_type = { "struct" ~ ("packed")? ~ "{" ~ field_list ~ "}" ~ identifier ~ packed_dimensions }
+dimensions = { packed_dimensions ~ ( "$" ~ unpacked_dimensions )? }
 
-allowed_type = { logic_type | struct_type }
+signed_modifier = { "signed" }
+
+logic_type = { ( "logic" | "reg" | "bit" ) ~ signed_modifier? ~ dimensions }
+
+struct_type = { "struct" ~ ("packed")? ~ "{" ~ field_list ~ "}" ~ identifier ~ dimensions }
+
+enum_type = { "enum" ~ "{" ~ variant_list ~ "}" ~ identifier ~ dimensions }
+
+allowed_type = { logic_type | struct_type | enum_type }
 
 field = { allowed_type ~ identifier }
 
 field_list = { field ~ (";" ~ field)* ~ (";")? }
+
+negative_sign = { "-" }
+
+verilog_decimal = { negative_sign? ~ number ~ "'" ~ ("s")? ~ "d" ~ number }
+
+variant = { identifier ~ "=" ~ verilog_decimal }
+
+variant_list = { variant ~ ("," ~ variant)* ~ (";")? }
 
 top = { allowed_type ~ EOI }
