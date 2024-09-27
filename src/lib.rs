@@ -5,7 +5,7 @@ use std::fs::{self, write};
 use std::process::Command;
 
 mod extract;
-pub use extract::{extract_ports, Dims, Port, PortDir};
+pub use extract::{extract_ports, Field, Port, PortDir, Range, Type};
 
 #[derive(Debug)]
 pub struct SlangConfig<'a> {
@@ -38,7 +38,7 @@ impl<'a> Default for SlangConfig<'a> {
 
 pub fn run_slang(cfg: &SlangConfig) -> Result<Value, Box<dyn std::error::Error>> {
     // Run the slang binary, dumping JSON to tmp_json.
-    let slang_path = env!("SLANG_PATH");
+    let slang_path = std::env::var("SLANG_PATH").unwrap();
 
     let tmp_json = tempfile::NamedTempFile::new()?;
     let mut args = vec!["--ast-json", tmp_json.path().to_str().unwrap()];

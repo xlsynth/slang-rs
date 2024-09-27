@@ -14,7 +14,7 @@ mod tests {
             parameter O=12
         ) (
             input a,
-            output [1:0] b,
+            output [1:0][11:0] b,
             output wire [2:0] c,
             input wire logic [3:0] d,
             output reg [4:0] e,
@@ -43,123 +43,112 @@ mod tests {
         };
 
         let definitions = extract_ports(&cfg, false);
-        println!("{:?}", definitions);
         assert_eq!(
             definitions["foo"],
             vec![
                 Port {
                     dir: PortDir::Input,
                     name: "a".to_string(),
-                    dims: Dims {
-                        packed: vec![],
-                        unpacked: vec![]
-                    }
+                    ty: Type::Logic {
+                        packed_dimensions: vec![]
+                    },
                 },
                 Port {
                     dir: PortDir::Output,
                     name: "b".to_string(),
-                    dims: Dims {
-                        packed: vec![(1, 0)],
-                        unpacked: vec![]
-                    }
+                    ty: Type::Logic {
+                        packed_dimensions: vec![
+                            Range { msb: 1, lsb: 0 },
+                            Range { msb: 11, lsb: 0 }
+                        ],
+                    },
                 },
                 Port {
                     dir: PortDir::Output,
                     name: "c".to_string(),
-                    dims: Dims {
-                        packed: vec![(2, 0)],
-                        unpacked: vec![]
-                    }
+                    ty: Type::Logic {
+                        packed_dimensions: vec![Range { msb: 2, lsb: 0 }],
+                    },
                 },
                 Port {
                     dir: PortDir::Input,
                     name: "d".to_string(),
-                    dims: Dims {
-                        packed: vec![(3, 0)],
-                        unpacked: vec![]
-                    }
+                    ty: Type::Logic {
+                        packed_dimensions: vec![Range { msb: 3, lsb: 0 }],
+                    },
                 },
                 Port {
                     dir: PortDir::Output,
                     name: "e".to_string(),
-                    dims: Dims {
-                        packed: vec![(4, 0)],
-                        unpacked: vec![]
-                    }
+                    ty: Type::Logic {
+                        packed_dimensions: vec![Range { msb: 4, lsb: 0 }],
+                    },
                 },
                 Port {
                     dir: PortDir::Output,
                     name: "f".to_string(),
-                    dims: Dims {
-                        packed: vec![(5, 0)],
-                        unpacked: vec![]
-                    }
+                    ty: Type::Logic {
+                        packed_dimensions: vec![Range { msb: 5, lsb: 0 }],
+                    },
                 },
                 Port {
                     dir: PortDir::Output,
                     name: "g".to_string(),
-                    dims: Dims {
-                        packed: vec![(6, 0)],
-                        unpacked: vec![]
-                    }
+                    ty: Type::Logic {
+                        packed_dimensions: vec![Range { msb: 6, lsb: 0 }],
+                    },
                 },
                 Port {
                     dir: PortDir::Input,
                     name: "h".to_string(),
-                    dims: Dims {
-                        packed: vec![(7, 0)],
-                        unpacked: vec![]
-                    }
+                    ty: Type::Logic {
+                        packed_dimensions: vec![Range { msb: 7, lsb: 0 }],
+                    },
                 },
                 Port {
                     dir: PortDir::Output,
                     name: "i".to_string(),
-                    dims: Dims {
-                        packed: vec![(8, 0)],
-                        unpacked: vec![]
-                    }
+                    ty: Type::Logic {
+                        packed_dimensions: vec![Range { msb: 8, lsb: 0 }],
+                    },
                 },
                 Port {
                     dir: PortDir::Input,
                     name: "j".to_string(),
-                    dims: Dims {
-                        packed: vec![(9, 0)],
-                        unpacked: vec![]
-                    }
+                    ty: Type::Logic {
+                        packed_dimensions: vec![Range { msb: 9, lsb: 0 }],
+                    },
                 },
                 Port {
                     dir: PortDir::Output,
                     name: "k".to_string(),
-                    dims: Dims {
-                        packed: vec![(10, 0)],
-                        unpacked: vec![]
-                    }
+                    ty: Type::Logic {
+                        packed_dimensions: vec![Range { msb: 10, lsb: 0 }],
+                    },
                 },
                 Port {
                     dir: PortDir::InOut,
                     name: "l".to_string(),
-                    dims: Dims {
-                        packed: vec![(0, 11)],
-                        unpacked: vec![]
-                    }
+                    ty: Type::Logic {
+                        packed_dimensions: vec![Range { msb: 0, lsb: 11 }],
+                    },
                 },
                 Port {
                     dir: PortDir::Output,
                     name: "m".to_string(),
-                    dims: Dims {
-                        packed: vec![(41, 0)],
-                        unpacked: vec![]
-                    }
-                }
+                    ty: Type::Logic {
+                        packed_dimensions: vec![Range { msb: 41, lsb: 0 }],
+                    },
+                },
             ]
         );
     }
 
     #[test]
-    fn test_ignore_struct() {
+    fn test_ignore_union() {
         let verilog = str2tmpfile(
             "
-        typedef struct {
+        typedef union {
             logic [7:0] data;
             logic valid;
         } bus_t;
@@ -184,17 +173,41 @@ mod tests {
             vec![Port {
                 dir: PortDir::Input,
                 name: "clk".to_string(),
-                dims: Dims {
-                    packed: vec![],
-                    unpacked: vec![]
-                }
+                ty: Type::Logic {
+                    packed_dimensions: vec![],
+                },
             }]
         );
     }
 
     #[test]
-    #[should_panic(expected = "Unsupported type: struct")]
+    #[should_panic(expected = "expected allowed_type")]
     fn test_panic_on_unsupported() {
+        let verilog = str2tmpfile(
+            "
+        typedef union {
+            logic [7:0] data;
+            logic valid;
+        } bus_t;
+
+        module foo (
+            input clk,
+            input bus_t bus
+        );
+        endmodule",
+        )
+        .unwrap();
+
+        let cfg = SlangConfig {
+            sources: &[verilog.path().to_str().unwrap()],
+            ..Default::default()
+        };
+
+        let _definitions = extract_ports(&cfg, false);
+    }
+
+    #[test]
+    fn test_struct() {
         let verilog = str2tmpfile(
             "
         typedef struct {
@@ -215,7 +228,43 @@ mod tests {
             ..Default::default()
         };
 
-        extract_ports(&cfg, false);
+        let definitions = extract_ports(&cfg, false);
+        println!("{:?}", definitions);
+
+        assert_eq!(
+            definitions["foo"],
+            vec![
+                Port {
+                    dir: PortDir::Input,
+                    name: "clk".to_string(),
+                    ty: Type::Logic {
+                        packed_dimensions: vec![],
+                    },
+                },
+                Port {
+                    dir: PortDir::Output,
+                    name: "bus".to_string(),
+                    ty: Type::Struct {
+                        name: "bus_t".to_string(),
+                        fields: vec![
+                            Field {
+                                name: "data".to_string(),
+                                ty: Type::Logic {
+                                    packed_dimensions: vec![Range { msb: 7, lsb: 0 }],
+                                },
+                            },
+                            Field {
+                                name: "valid".to_string(),
+                                ty: Type::Logic {
+                                    packed_dimensions: vec![],
+                                },
+                            },
+                        ],
+                        packed_dimensions: vec![],
+                    },
+                },
+            ]
+        );
     }
 
     #[test]

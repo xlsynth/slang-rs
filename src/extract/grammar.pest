@@ -1,0 +1,25 @@
+// SPDX-License-Identifier: Apache-2.0
+
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
+
+identifier = @{ (ASCII_ALPHANUMERIC | "_")+ }
+
+number = @{ ASCII_DIGIT+ }
+
+range = { number ~ ":" ~ number }
+
+packed_dimension = { "[" ~ range ~ "]" }
+
+packed_dimensions = { packed_dimension* }
+
+logic_type = { ( "logic" | "reg" | "bit" ) ~ ("signed")? ~ packed_dimensions }
+
+struct_type = { "struct" ~ ("packed")? ~ "{" ~ field_list ~ "}" ~ identifier ~ packed_dimensions }
+
+allowed_type = { logic_type | struct_type }
+
+field = { allowed_type ~ identifier }
+
+field_list = { field ~ (";" ~ field)* ~ (";")? }
+
+top = { allowed_type ~ EOI }
