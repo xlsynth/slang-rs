@@ -51,6 +51,7 @@ mod tests {
                     dir: PortDir::Input,
                     name: "a".to_string(),
                     ty: Type::Logic {
+                        signed: false,
                         packed_dimensions: vec![],
                         unpacked_dimensions: vec![],
                     },
@@ -59,6 +60,7 @@ mod tests {
                     dir: PortDir::Output,
                     name: "b".to_string(),
                     ty: Type::Logic {
+                        signed: false,
                         packed_dimensions: vec![
                             Range { msb: 1, lsb: 0 },
                             Range { msb: 11, lsb: 0 }
@@ -73,6 +75,7 @@ mod tests {
                     dir: PortDir::Output,
                     name: "c".to_string(),
                     ty: Type::Logic {
+                        signed: false,
                         packed_dimensions: vec![Range { msb: 2, lsb: 0 }],
                         unpacked_dimensions: vec![],
                     },
@@ -81,6 +84,7 @@ mod tests {
                     dir: PortDir::Input,
                     name: "d".to_string(),
                     ty: Type::Logic {
+                        signed: false,
                         packed_dimensions: vec![Range { msb: 3, lsb: 0 }],
                         unpacked_dimensions: vec![],
                     },
@@ -89,6 +93,7 @@ mod tests {
                     dir: PortDir::Output,
                     name: "e".to_string(),
                     ty: Type::Logic {
+                        signed: false,
                         packed_dimensions: vec![Range { msb: 4, lsb: 0 }],
                         unpacked_dimensions: vec![],
                     },
@@ -97,6 +102,7 @@ mod tests {
                     dir: PortDir::Output,
                     name: "f".to_string(),
                     ty: Type::Logic {
+                        signed: false,
                         packed_dimensions: vec![Range { msb: 5, lsb: 0 }],
                         unpacked_dimensions: vec![],
                     },
@@ -105,6 +111,7 @@ mod tests {
                     dir: PortDir::Output,
                     name: "g".to_string(),
                     ty: Type::Logic {
+                        signed: false,
                         packed_dimensions: vec![Range { msb: 6, lsb: 0 }],
                         unpacked_dimensions: vec![],
                     },
@@ -113,6 +120,7 @@ mod tests {
                     dir: PortDir::Input,
                     name: "h".to_string(),
                     ty: Type::Logic {
+                        signed: false,
                         packed_dimensions: vec![Range { msb: 7, lsb: 0 }],
                         unpacked_dimensions: vec![],
                     },
@@ -121,6 +129,7 @@ mod tests {
                     dir: PortDir::Output,
                     name: "i".to_string(),
                     ty: Type::Logic {
+                        signed: true,
                         packed_dimensions: vec![Range { msb: 8, lsb: 0 }],
                         unpacked_dimensions: vec![],
                     },
@@ -129,6 +138,7 @@ mod tests {
                     dir: PortDir::Input,
                     name: "j".to_string(),
                     ty: Type::Logic {
+                        signed: false,
                         packed_dimensions: vec![Range { msb: 9, lsb: 0 }],
                         unpacked_dimensions: vec![],
                     },
@@ -137,6 +147,7 @@ mod tests {
                     dir: PortDir::Output,
                     name: "k".to_string(),
                     ty: Type::Logic {
+                        signed: false,
                         packed_dimensions: vec![Range { msb: 10, lsb: 0 }],
                         unpacked_dimensions: vec![],
                     },
@@ -145,6 +156,7 @@ mod tests {
                     dir: PortDir::InOut,
                     name: "l".to_string(),
                     ty: Type::Logic {
+                        signed: false,
                         packed_dimensions: vec![Range { msb: 0, lsb: 11 }],
                         unpacked_dimensions: vec![],
                     },
@@ -153,6 +165,7 @@ mod tests {
                     dir: PortDir::Output,
                     name: "m".to_string(),
                     ty: Type::Logic {
+                        signed: false,
                         packed_dimensions: vec![Range { msb: 41, lsb: 0 }],
                         unpacked_dimensions: vec![],
                     },
@@ -191,6 +204,7 @@ mod tests {
                 dir: PortDir::Input,
                 name: "clk".to_string(),
                 ty: Type::Logic {
+                    signed: false,
                     packed_dimensions: vec![],
                     unpacked_dimensions: vec![],
                 },
@@ -256,6 +270,7 @@ mod tests {
                     dir: PortDir::Input,
                     name: "clk".to_string(),
                     ty: Type::Logic {
+                        signed: false,
                         packed_dimensions: vec![],
                         unpacked_dimensions: vec![],
                     },
@@ -269,6 +284,7 @@ mod tests {
                             Field {
                                 name: "data".to_string(),
                                 ty: Type::Logic {
+                                    signed: false,
                                     packed_dimensions: vec![Range { msb: 7, lsb: 0 }],
                                     unpacked_dimensions: vec![],
                                 },
@@ -276,6 +292,7 @@ mod tests {
                             Field {
                                 name: "valid".to_string(),
                                 ty: Type::Logic {
+                                    signed: false,
                                     packed_dimensions: vec![],
                                     unpacked_dimensions: vec![],
                                 },
@@ -321,6 +338,7 @@ mod tests {
                     dir: PortDir::Input,
                     name: "clk".to_string(),
                     ty: Type::Logic {
+                        signed: false,
                         packed_dimensions: vec![],
                         unpacked_dimensions: vec![],
                     },

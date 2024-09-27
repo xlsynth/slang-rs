@@ -12,6 +12,7 @@ struct DataTypeParser;
 #[derive(Debug, PartialEq)]
 pub enum Type {
     Logic {
+        signed: bool,
         packed_dimensions: Vec<Range>,
         unpacked_dimensions: Vec<Range>,
     },
@@ -66,6 +67,8 @@ fn build_field_type(pair: pest::iterators::Pair<Rule>) -> Type {
 
 fn build_logic_type(pair: pest::iterators::Pair<Rule>) -> Type {
     let inner = pair.into_inner();
+
+    let mut signed = false;
     let mut packed_dimensions = Vec::new();
     let mut unpacked_dimensions = Vec::new();
 
@@ -91,12 +94,15 @@ fn build_logic_type(pair: pest::iterators::Pair<Rule>) -> Type {
                     }
                 }
             }
-            Rule::signed_modifier => {}
+            Rule::signed_modifier => {
+                signed = true;
+            }
             _ => {}
         }
     }
 
     Type::Logic {
+        signed,
         packed_dimensions,
         unpacked_dimensions,
     }
