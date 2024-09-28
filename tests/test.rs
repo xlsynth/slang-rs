@@ -307,6 +307,102 @@ mod tests {
     }
 
     #[test]
+    fn test_package() {
+        let verilog = str2tmpfile(
+            "
+        package mypack;
+            typedef struct {
+                logic [7:0] data;
+                logic valid;
+            } bus_t;
+            typedef enum logic [15:0] {
+                A=1234,
+                B=2345
+            } enum_t;
+        endpackage
+
+        module foo (
+            input clk,
+            output mypack::bus_t bus,
+            output mypack::enum_t data
+        );
+        endmodule",
+        )
+        .unwrap();
+
+        let cfg = SlangConfig {
+            sources: &[verilog.path().to_str().unwrap()],
+            ..Default::default()
+        };
+
+        let definitions = extract_ports(&cfg, false);
+        println!("{:?}", definitions);
+
+        assert_eq!(
+            definitions["foo"],
+            vec![
+                Port {
+                    dir: PortDir::Input,
+                    name: "clk".to_string(),
+                    ty: Type::Logic {
+                        signed: false,
+                        packed_dimensions: vec![],
+                        unpacked_dimensions: vec![],
+                    },
+                },
+                Port {
+                    dir: PortDir::Output,
+                    name: "bus".to_string(),
+                    ty: Type::Struct {
+                        name: "mypack::bus_t".to_string(),
+                        fields: vec![
+                            Field {
+                                name: "data".to_string(),
+                                ty: Type::Logic {
+                                    signed: false,
+                                    packed_dimensions: vec![Range { msb: 7, lsb: 0 }],
+                                    unpacked_dimensions: vec![],
+                                },
+                            },
+                            Field {
+                                name: "valid".to_string(),
+                                ty: Type::Logic {
+                                    signed: false,
+                                    packed_dimensions: vec![],
+                                    unpacked_dimensions: vec![],
+                                },
+                            },
+                        ],
+                        packed_dimensions: vec![],
+                        unpacked_dimensions: vec![],
+                    },
+                },
+                Port {
+                    dir: PortDir::Output,
+                    name: "data".to_string(),
+                    ty: Type::Enum {
+                        name: "mypack::enum_t".to_string(),
+                        variants: vec![
+                            Variant {
+                                name: "A".to_string(),
+                                width: 16,
+                                value: BigInt::from(1234),
+                            },
+                            Variant {
+                                name: "B".to_string(),
+                                width: 16,
+                                value: BigInt::from(2345),
+                            },
+                        ],
+                        packed_dimensions: vec![],
+                        unpacked_dimensions: vec![],
+                    },
+                }
+            ]
+        );
+    }
+
+    #[test]
     fn test_enum() {
         let verilog = str2tmpfile(
             "
