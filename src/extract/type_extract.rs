@@ -127,7 +127,7 @@ fn build_struct_type(pair: pest::iterators::Pair<Rule>) -> Type {
                     }
                 }
             }
-            Rule::identifier => {
+            Rule::full_identifier => {
                 name = inner_pair.as_str().to_string();
             }
             Rule::packed_dimensions => {
@@ -172,7 +172,7 @@ fn build_enum_type(pair: pest::iterators::Pair<Rule>) -> Type {
                     }
                 }
             }
-            Rule::identifier => {
+            Rule::full_identifier => {
                 name = inner_pair.as_str().to_string();
             }
             Rule::packed_dimensions => {

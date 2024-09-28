@@ -4,6 +4,8 @@ WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
 
 identifier = @{ (ASCII_ALPHANUMERIC | "_")+ }
 
+full_identifier = @{ (ASCII_ALPHANUMERIC | "_" | ":")+ }
+
 number = @{ ASCII_DIGIT+ }
 
 range = { number ~ ":" ~ number }
@@ -20,9 +22,9 @@ signed_modifier = { "signed" }
 
 logic_type = { ( "logic" | "reg" | "bit" ) ~ signed_modifier? ~ dimensions }
 
-struct_type = { "struct" ~ ("packed")? ~ "{" ~ field_list ~ "}" ~ identifier ~ dimensions }
+struct_type = { "struct" ~ ("packed")? ~ "{" ~ field_list ~ "}" ~ full_identifier ~ dimensions }
 
-enum_type = { "enum" ~ "{" ~ variant_list ~ "}" ~ identifier ~ dimensions }
+enum_type = { "enum" ~ "{" ~ variant_list ~ "}" ~ full_identifier ~ dimensions }
 
 allowed_type = { logic_type | struct_type | enum_type }
 
