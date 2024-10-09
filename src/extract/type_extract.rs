@@ -51,6 +51,77 @@ pub struct Variant {
     pub value: BigInt,
 }
 
+impl Type {
+    fn unpacked_dimensions(&self) -> &Vec<Range> {
+        match self {
+            Type::Logic {
+                unpacked_dimensions,
+                ..
+            } => unpacked_dimensions,
+            Type::Struct {
+                unpacked_dimensions,
+                ..
+            } => unpacked_dimensions,
+            Type::Enum {
+                unpacked_dimensions,
+                ..
+            } => unpacked_dimensions,
+        }
+    }
+
+    fn packed_dimensions(&self) -> &Vec<Range> {
+        match self {
+            Type::Logic {
+                packed_dimensions, ..
+            } => packed_dimensions,
+            Type::Struct {
+                packed_dimensions, ..
+            } => packed_dimensions,
+            Type::Enum {
+                packed_dimensions, ..
+            } => packed_dimensions,
+        }
+    }
+
+    fn number_of_elements(&self) -> Result<usize, &str> {
+        if !self.unpacked_dimensions().is_empty() {
+            return Err("Unpacked dimensions are not supported in width calculations");
+        }
+
+        Ok(self
+            .packed_dimensions()
+            .iter()
+            .map(|Range { msb, lsb }| msb - lsb + 1)
+            .product())
+    }
+
+    pub fn width(&self) -> Result<usize, &str> {
+        match self {
+            Type::Logic { signed: _, .. } => self.number_of_elements(),
+            Type::Struct { fields, .. } => {
+                let mut width = 0;
+                for field in fields {
+                    width += field.ty.width()?;
+                }
+                Ok(width * self.number_of_elements()?)
+            }
+            Type::Enum { variants, .. } => {
+                if variants.is_empty() {
+                    return Err("Enum with no variants");
+                }
+
+                let width = variants[0].width;
+                for variant in variants[1..].iter() {
+                    if width != variant.width {
+                        return Err("Enum with different-sized variants");
+                    }
+                }
+                Ok(width * self.number_of_elements()?)
+            }
+        }
+    }
+}
+
 pub fn parse_type_definition(input: &str) -> Result<Type, Box<dyn Error>> {
     let mut parse_tree = DataTypeParser::parse(Rule::top, input)?;
     let ty = parse_tree.next().unwrap().into_inner().next().unwrap();
@@ -130,16 +201,24 @@ fn build_struct_type(pair: pest::iterators::Pair<Rule>) -> Type {
             Rule::full_identifier => {
                 name = inner_pair.as_str().to_string();
             }
-            Rule::packed_dimensions => {
-                for dim_pair in inner_pair.into_inner() {
-                    let range = build_range(dim_pair.into_inner().next().unwrap());
-                    packed_dimensions.push(range);
-                }
-            }
-            Rule::unpacked_dimensions => {
-                for dim_pair in inner_pair.into_inner() {
-                    let range = build_range(dim_pair.into_inner().next().unwrap());
-                    unpacked_dimensions.push(range);
+            Rule::dimensions => {
+                let inner_inner = inner_pair.into_inner();
+                for inner_inner_pair in inner_inner {
+                    match inner_inner_pair.as_rule() {
+                        Rule::packed_dimensions => {
+                            for dim_pair in inner_inner_pair.into_inner() {
+                                let range = build_range(dim_pair.into_inner().next().unwrap());
+                                packed_dimensions.push(range);
+                            }
+                        }
+                        Rule::unpacked_dimensions => {
+                            for dim_pair in inner_inner_pair.into_inner() {
+                                let range = build_range(dim_pair.into_inner().next().unwrap());
+                                unpacked_dimensions.push(range);
+                            }
+                        }
+                        _ => {}
+                    }
                 }
             }
             _ => {}
@@ -175,16 +254,24 @@ fn build_enum_type(pair: pest::iterators::Pair<Rule>) -> Type {
             Rule::full_identifier => {
                 name = inner_pair.as_str().to_string();
             }
-            Rule::packed_dimensions => {
-                for dim_pair in inner_pair.into_inner() {
-                    let range = build_range(dim_pair.into_inner().next().unwrap());
-                    packed_dimensions.push(range);
-                }
-            }
-            Rule::unpacked_dimensions => {
-                for dim_pair in inner_pair.into_inner() {
-                    let range = build_range(dim_pair.into_inner().next().unwrap());
-                    unpacked_dimensions.push(range);
+            Rule::dimensions => {
+                let inner_inner = inner_pair.into_inner();
+                for inner_inner_pair in inner_inner {
+                    match inner_inner_pair.as_rule() {
+                        Rule::packed_dimensions => {
+                            for dim_pair in inner_inner_pair.into_inner() {
+                                let range = build_range(dim_pair.into_inner().next().unwrap());
+                                packed_dimensions.push(range);
+                            }
+                        }
+                        Rule::unpacked_dimensions => {
+                            for dim_pair in inner_inner_pair.into_inner() {
+                                let range = build_range(dim_pair.into_inner().next().unwrap());
+                                unpacked_dimensions.push(range);
+                            }
+                        }
+                        _ => {}
+                    }
                 }
             }
             _ => {}

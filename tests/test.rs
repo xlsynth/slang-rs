@@ -307,6 +307,105 @@ mod tests {
     }
 
     #[test]
+    fn test_struct_array() {
+        let verilog = str2tmpfile(
+            "
+        typedef struct packed {
+            logic [7:0] data;
+        } bus_t;
+
+        module foo (
+            output bus_t [3:0] bus
+        );
+        endmodule",
+        )
+        .unwrap();
+
+        let cfg = SlangConfig {
+            sources: &[verilog.path().to_str().unwrap()],
+            ..Default::default()
+        };
+
+        let definitions = extract_ports(&cfg, false);
+
+        assert_eq!(
+            definitions["foo"],
+            vec![Port {
+                dir: PortDir::Output,
+                name: "bus".to_string(),
+                ty: Type::Struct {
+                    name: "bus_t".to_string(),
+                    fields: vec![Field {
+                        name: "data".to_string(),
+                        ty: Type::Logic {
+                            signed: false,
+                            packed_dimensions: vec![Range { msb: 7, lsb: 0 }],
+                            unpacked_dimensions: vec![],
+                        },
+                    },],
+                    packed_dimensions: vec![Range { msb: 3, lsb: 0 }],
+                    unpacked_dimensions: vec![],
+                },
+            },]
+        );
+    }
+
+    #[test]
+    fn test_enum_array() {
+        let verilog = str2tmpfile(
+            "
+        typedef enum logic [1:0] {
+            RED=0,
+            GREEN=1,
+            BLUE=2
+        } color_t;
+
+        module foo (
+            output color_t [3:0] color
+        );
+        endmodule",
+        )
+        .unwrap();
+
+        let cfg = SlangConfig {
+            sources: &[verilog.path().to_str().unwrap()],
+            ..Default::default()
+        };
+
+        let definitions = extract_ports(&cfg, false);
+
+        assert_eq!(
+            definitions["foo"],
+            vec![Port {
+                dir: PortDir::Output,
+                name: "color".to_string(),
+                ty: Type::Enum {
+                    name: "color_t".to_string(),
+                    variants: vec![
+                        Variant {
+                            name: "RED".to_string(),
+                            width: 2,
+                            value: BigInt::from(0),
+                        },
+                        Variant {
+                            name: "GREEN".to_string(),
+                            width: 2,
+                            value: BigInt::from(1),
+                        },
+                        Variant {
+                            name: "BLUE".to_string(),
+                            width: 2,
+                            value: BigInt::from(2),
+                        },
+                    ],
+                    packed_dimensions: vec![Range { msb: 3, lsb: 0 }],
+                    unpacked_dimensions: vec![],
+                },
+            },]
+        );
+    }
+
+    #[test]
     fn test_package() {
         let verilog = str2tmpfile(
             "
@@ -475,5 +574,48 @@ mod tests {
         };
 
         extract_ports(&cfg, false);
+    }
+
+    #[test]
+    fn test_width_fn() {
+        let verilog = str2tmpfile(
+            "
+        typedef struct packed {
+            logic [7:0] a; // width: 8
+            logic [1:0][2:0] b; // width: 6
+        } inner_t; // width: 14
+
+        typedef enum logic [1:0] {
+            RED=0,
+            GREEN=1,
+            BLUE=2
+        } color_t; // width: 2
+
+        typedef struct packed {
+            inner_t c; // width: 14
+            inner_t [3:0] d; // width: 56
+            inner_t [4:0][4:0] e; // width: 350
+            color_t color; // width: 2
+        } outer_t; // width: 422
+
+        module foo (
+            output outer_t out0, // width: 422
+            output outer_t [6:0][7:0] out1, // width: 23632
+            input wire in0
+        );
+        endmodule",
+        )
+        .unwrap();
+
+        let cfg = SlangConfig {
+            sources: &[verilog.path().to_str().unwrap()],
+            ..Default::default()
+        };
+
+        let definitions = extract_ports(&cfg, false);
+
+        assert_eq!(definitions["foo"][0].ty.width().unwrap(), 422);
+        assert_eq!(definitions["foo"][1].ty.width().unwrap(), 23632);
+        assert_eq!(definitions["foo"][2].ty.width().unwrap(), 1);
     }
 }
