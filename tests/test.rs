@@ -618,4 +618,50 @@ mod tests {
         assert_eq!(definitions["foo"][1].ty.width().unwrap(), 23632);
         assert_eq!(definitions["foo"][2].ty.width().unwrap(), 1);
     }
+
+    #[test]
+    fn test_module_extract() {
+        // test verilog includes other kinds of definitions to make sure that the
+        // library is only extracting module names
+        let verilog = str2tmpfile(
+            "
+package my_pack;
+endpackage
+
+typedef struct {
+    logic [7:0] data;
+} my_struct_t;
+
+interface my_intf;
+endinterface
+
+module A;
+endmodule
+
+module B;
+endmodule
+
+module C;
+A a0();
+A a1();
+B b0();
+B b1();
+endmodule
+
+module D;
+endmodule
+",
+        )
+        .unwrap();
+
+        let cfg = SlangConfig {
+            sources: &[verilog.path().to_str().unwrap()],
+            ..Default::default()
+        };
+
+        let mut modules = extract_modules(&cfg).unwrap();
+        modules.sort();
+
+        assert_eq!(modules, vec!["A", "B", "C", "D"]);
+    }
 }

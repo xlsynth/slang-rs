@@ -5,7 +5,7 @@ use std::fs::{self, write};
 use std::process::Command;
 
 mod extract;
-pub use extract::{extract_ports, Field, Port, PortDir, Range, Type, Variant};
+pub use extract::{extract_modules, extract_ports, Field, Port, PortDir, Range, Type, Variant};
 
 #[derive(Debug)]
 pub struct SlangConfig<'a> {

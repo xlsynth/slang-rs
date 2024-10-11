@@ -2,6 +2,7 @@
 
 use serde_json::Value;
 use std::collections::{hash_map::Entry, HashMap};
+use std::error::Error;
 use std::str::FromStr;
 
 mod type_extract;
@@ -100,4 +101,30 @@ pub fn extract_ports_from_value(
     }
 
     ports_map
+}
+
+pub fn extract_modules_from_value(value: &Value) -> Result<Vec<String>, Box<dyn Error>> {
+    let definitions = value
+        .get("definitions")
+        .and_then(|v| v.as_array())
+        .ok_or("JSON parsing failed")?;
+
+    let mut modules = Vec::new();
+
+    for definition in definitions {
+        if definition.get("kind").and_then(|v| v.as_str()) == Some("Definition")
+            && definition.get("definitionKind").and_then(|v| v.as_str()) == Some("Module")
+        {
+            if let Some(name) = definition.get("name").and_then(|v| v.as_str()) {
+                modules.push(name.to_string());
+            }
+        }
+    }
+
+    Ok(modules)
+}
+
+pub fn extract_modules(cfg: &crate::SlangConfig) -> Result<Vec<String>, Box<dyn Error>> {
+    let result = crate::run_slang(cfg)?;
+    extract_modules_from_value(&result)
 }
