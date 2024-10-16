@@ -41,6 +41,13 @@ jobs:
     container: rockylinux:8
 
     steps:
+      - name: Install Clang-17
+        run: |
+          dnf install -y llvm-toolset
+
+      - name: Note Clang version
+        run: clang-17 --version
+
       - name: Download Slang Release
         run: |
           curl -L -o source.tar.gz "https://github.com/MikePopoloski/slang/archive/refs/tags/v6.0.tar.gz"
@@ -57,8 +64,8 @@ jobs:
       - name: Build Slang
         working-directory: source
         run: |
-          cmake -B build
-          cmake --build build -j8
+          CC=clang-17 CXX=clang++-17 cmake -B build
+          CC=clang-17 CXX=clang++-17 cmake --build build -j8
 
       - name: Upload Binary Artifact
         uses: actions/upload-artifact@v4
