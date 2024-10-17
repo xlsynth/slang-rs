@@ -44,7 +44,7 @@ jobs:
       - name: Install Dependencies
         run: |
           dnf install -y python3 python3-devel
-          dnf install -y gcc openssl-devel libffi-devel make cmake curl
+          dnf install -y gcc openssl-devel libffi-devel make cmake curl git
 
       - name: Install Clang-17
         run: |
