@@ -41,6 +41,11 @@ jobs:
     container: rockylinux:8
 
     steps:
+      - name: Install Dependencies
+        run: |
+          dnf install -y python3 python3-devel
+          dnf install -y gcc openssl-devel libffi-devel make cmake curl
+
       - name: Install Clang-17
         run: |
           dnf install -y llvm-toolset
@@ -56,10 +61,6 @@ jobs:
         run: |
           mkdir source
           tar -xzf source.tar.gz -C source --strip-components=1
-
-      - name: Install Dependencies
-        run: |
-          yum install -y gcc openssl-devel libffi-devel make cmake curl
 
       - name: Build Slang
         working-directory: source
