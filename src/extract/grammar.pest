@@ -24,9 +24,11 @@ logic_type = { ( "logic" | "reg" | "bit" ) ~ signed_modifier? ~ dimensions }
 
 struct_type = { "struct" ~ ("packed")? ~ "{" ~ field_list ~ "}" ~ full_identifier ~ dimensions }
 
+union_type = { "union" ~ ("packed")? ~ "{" ~ field_list ~ "}" ~ full_identifier ~ dimensions }
+
 enum_type = { "enum" ~ "{" ~ variant_list ~ "}" ~ full_identifier ~ dimensions }
 
-allowed_type = { logic_type | struct_type | enum_type }
+allowed_type = { logic_type | struct_type | union_type | enum_type }
 
 field = { allowed_type ~ identifier }
 

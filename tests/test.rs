@@ -175,7 +175,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ignore_union() {
+    fn test_union() {
         let verilog = str2tmpfile(
             "
         typedef union {
@@ -200,42 +200,47 @@ mod tests {
         println!("{:?}", definitions);
         assert_eq!(
             definitions["foo"],
-            vec![Port {
-                dir: PortDir::Input,
-                name: "clk".to_string(),
-                ty: Type::Logic {
-                    signed: false,
-                    packed_dimensions: vec![],
-                    unpacked_dimensions: vec![],
+            vec![
+                Port {
+                    dir: PortDir::Input,
+                    name: "clk".to_string(),
+                    ty: Type::Logic {
+                        signed: false,
+                        packed_dimensions: vec![],
+                        unpacked_dimensions: vec![],
+                    },
                 },
-            }]
+                Port {
+                    dir: PortDir::Input,
+                    name: "bus".to_string(),
+                    ty: Type::Union {
+                        name: "bus_t".to_string(),
+                        fields: vec![
+                            Field {
+                                name: "data".to_string(),
+                                ty: Type::Logic {
+                                    signed: false,
+                                    packed_dimensions: vec![Range { msb: 7, lsb: 0 }],
+                                    unpacked_dimensions: vec![],
+                                },
+                            },
+                            Field {
+                                name: "valid".to_string(),
+                                ty: Type::Logic {
+                                    signed: false,
+                                    packed_dimensions: vec![],
+                                    unpacked_dimensions: vec![],
+                                },
+                            },
+                        ],
+                        packed_dimensions: vec![],
+                        unpacked_dimensions: vec![],
+                    },
+                }
+            ]
         );
-    }
 
-    #[test]
-    #[should_panic(expected = "expected allowed_type")]
-    fn test_panic_on_unsupported() {
-        let verilog = str2tmpfile(
-            "
-        typedef union {
-            logic [7:0] data;
-            logic valid;
-        } bus_t;
-
-        module foo (
-            input clk,
-            input bus_t bus
-        );
-        endmodule",
-        )
-        .unwrap();
-
-        let cfg = SlangConfig {
-            sources: &[verilog.path().to_str().unwrap()],
-            ..Default::default()
-        };
-
-        let _definitions = extract_ports(&cfg, false);
+        assert_eq!(definitions["foo"][1].ty.width().unwrap(), 8);
     }
 
     #[test]
@@ -304,6 +309,8 @@ mod tests {
                 },
             ]
         );
+
+        assert_eq!(definitions["foo"][1].ty.width().unwrap(), 9);
     }
 
     #[test]
