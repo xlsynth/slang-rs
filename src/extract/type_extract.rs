@@ -24,6 +24,12 @@ pub enum Type {
         packed_dimensions: Vec<Range>,
         unpacked_dimensions: Vec<Range>,
     },
+    Union {
+        name: String,
+        fields: Vec<Field>,
+        packed_dimensions: Vec<Range>,
+        unpacked_dimensions: Vec<Range>,
+    },
     Enum {
         name: String,
         variants: Vec<Variant>,
@@ -62,6 +68,10 @@ impl Type {
                 unpacked_dimensions,
                 ..
             } => unpacked_dimensions,
+            Type::Union {
+                unpacked_dimensions,
+                ..
+            } => unpacked_dimensions,
             Type::Enum {
                 unpacked_dimensions,
                 ..
@@ -78,6 +88,9 @@ impl Type {
                 packed_dimensions, ..
             } => packed_dimensions,
             Type::Enum {
+                packed_dimensions, ..
+            } => packed_dimensions,
+            Type::Union {
                 packed_dimensions, ..
             } => packed_dimensions,
         }
@@ -102,6 +115,13 @@ impl Type {
                 let mut width = 0;
                 for field in fields {
                     width += field.ty.width()?;
+                }
+                Ok(width * self.number_of_elements()?)
+            }
+            Type::Union { fields, .. } => {
+                let mut width = 0;
+                for field in fields {
+                    width = width.max(field.ty.width()?);
                 }
                 Ok(width * self.number_of_elements()?)
             }
@@ -132,7 +152,8 @@ fn build_field_type(pair: pest::iterators::Pair<Rule>) -> Type {
     let inner_pair = pair.into_inner().next().unwrap();
     match inner_pair.as_rule() {
         Rule::logic_type => build_logic_type(inner_pair),
-        Rule::struct_type => build_struct_type(inner_pair),
+        Rule::struct_type => build_struct_or_union_type(inner_pair, false),
+        Rule::union_type => build_struct_or_union_type(inner_pair, true),
         Rule::enum_type => build_enum_type(inner_pair),
         _ => unreachable!(),
     }
@@ -181,7 +202,7 @@ fn build_logic_type(pair: pest::iterators::Pair<Rule>) -> Type {
     }
 }
 
-fn build_struct_type(pair: pest::iterators::Pair<Rule>) -> Type {
+fn build_struct_or_union_type(pair: pest::iterators::Pair<Rule>, is_union: bool) -> Type {
     let inner = pair.into_inner();
     let mut fields = Vec::new();
     let mut packed_dimensions = Vec::new();
@@ -225,11 +246,20 @@ fn build_struct_type(pair: pest::iterators::Pair<Rule>) -> Type {
         }
     }
 
-    Type::Struct {
-        name,
-        fields,
-        packed_dimensions,
-        unpacked_dimensions,
+    if is_union {
+        Type::Union {
+            name,
+            fields,
+            packed_dimensions,
+            unpacked_dimensions,
+        }
+    } else {
+        Type::Struct {
+            name,
+            fields,
+            packed_dimensions,
+            unpacked_dimensions,
+        }
     }
 }
 
