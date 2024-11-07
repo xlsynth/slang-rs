@@ -36,15 +36,25 @@ impl<'a> Default for SlangConfig<'a> {
     }
 }
 
+/// Searches the PATH to try and locate the slang binary.
+fn find_slang() -> Option<String> {
+    which::which("slang")
+        .ok()
+        .map(|p| p.to_string_lossy().to_string())
+}
+
 pub fn run_slang(cfg: &SlangConfig) -> Result<Value, Box<dyn std::error::Error>> {
     // Run the slang binary, dumping JSON to tmp_json.
 
-    let slang_path = match std::env::var("SLANG_PATH") {
-        Ok(val) => val,
-        Err(_) => panic!(
-            "Please set the SLANG_PATH environment variable to the path of the slang binary."
-        ),
-    };
+    let slang_path = std::env::var("SLANG_PATH").unwrap_or_else(|_| {
+        // fallback solution: try to find slang on our own
+        match find_slang() {
+            Some(val) => val,
+            None => panic!(
+                "Please set the SLANG_PATH environment variable to the path of the slang binary."
+            ),
+        }
+    });
 
     if !std::path::Path::new(&slang_path).exists() {
         return Err(format!("slang binary not found at path: {}", slang_path).into());
