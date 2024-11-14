@@ -63,6 +63,13 @@ pub fn extract_ports_from_value(
                                 let port_name = instance_member["name"].as_str().unwrap();
                                 let direction = instance_member["direction"].as_str().unwrap();
                                 let type_str = instance_member["type"].as_str().unwrap();
+                                if type_str == "<error>" {
+                                    if skip_unsupported {
+                                        continue;
+                                    } else {
+                                        panic!("Found \"<error>\" type in Slang JSON output.");
+                                    }
+                                }
                                 let ty = match parse_type_definition(type_str) {
                                     Ok(ty) => ty,
                                     Err(e) => {
