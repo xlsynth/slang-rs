@@ -54,6 +54,9 @@ pub fn extract_ports_from_value(
         for member in members {
             if member["kind"] == "Instance" {
                 let module_name = member["name"].as_str().unwrap();
+                if module_name.is_empty() {
+                    continue;
+                }
                 let mut ports = Vec::new();
                 if let Some(instance_body_members) = member["body"]["members"].as_array() {
                     for instance_member in instance_body_members {
