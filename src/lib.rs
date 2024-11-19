@@ -18,6 +18,7 @@ pub struct SlangConfig<'a> {
     pub libdirs: &'a [&'a str],
     pub libexts: &'a [&'a str],
     pub ignore_unknown_modules: bool,
+    pub timescale: Option<&'a str>,
 }
 
 impl<'a> Default for SlangConfig<'a> {
@@ -32,6 +33,7 @@ impl<'a> Default for SlangConfig<'a> {
             libdirs: &[],
             libexts: &[],
             ignore_unknown_modules: true,
+            timescale: None,
         }
     }
 }
@@ -110,6 +112,11 @@ pub fn run_slang(cfg: &SlangConfig) -> Result<Value, Box<dyn std::error::Error>>
     for libext in cfg.libexts.iter() {
         args.push("-Y");
         args.push(libext);
+    }
+
+    if let Some(timescale) = cfg.timescale {
+        args.push("--timescale");
+        args.push(timescale);
     }
 
     for source in cfg.sources.iter() {
