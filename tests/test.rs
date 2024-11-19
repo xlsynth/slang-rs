@@ -671,4 +671,50 @@ endmodule
 
         assert_eq!(modules, vec!["A", "B", "C", "D"]);
     }
+
+    #[test]
+    fn test_timescale_option() {
+        let verilog_a = str2tmpfile(
+            "
+module A(
+    input clk
+);
+    B b();
+endmodule
+",
+        )
+        .unwrap();
+
+        let verilog_b = str2tmpfile(
+            "
+`timescale 1ns/1ps
+module B;
+endmodule
+",
+        )
+        .unwrap();
+
+        let cfg = SlangConfig {
+            sources: &[
+                verilog_b.path().to_str().unwrap(),
+                verilog_a.path().to_str().unwrap(),
+            ],
+            tops: &["A"],
+            timescale: Some("1ns/1ps"),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            extract_ports(&cfg, false)["A"],
+            vec![Port {
+                dir: PortDir::Input,
+                name: "clk".to_string(),
+                ty: Type::Logic {
+                    signed: false,
+                    packed_dimensions: vec![],
+                    unpacked_dimensions: vec![]
+                },
+            }]
+        );
+    }
 }
