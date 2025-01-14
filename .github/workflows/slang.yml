@@ -46,12 +46,12 @@ jobs:
           dnf install -y python3 python3-devel
           dnf install -y gcc openssl-devel libffi-devel make cmake curl git
 
-      - name: Install Clang-17
+      - name: Install Clang-18
         run: |
           dnf install -y llvm-toolset
 
       - name: Note Clang version
-        run: clang-17 --version
+        run: clang-18 --version
 
       - name: Download Slang Release
         run: |
@@ -65,8 +65,8 @@ jobs:
       - name: Build Slang
         working-directory: source
         run: |
-          CC=clang-17 CXX=clang++-17 cmake -B build
-          CC=clang-17 CXX=clang++-17 cmake --build build -j8
+          CC=clang-18 CXX=clang++-18 cmake -B build
+          CC=clang-18 CXX=clang++-18 cmake --build build -j8
 
       - name: Upload Binary Artifact
         uses: actions/upload-artifact@v4
