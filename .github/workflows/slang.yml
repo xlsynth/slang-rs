@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: Download Slang Release
         run: |
-          curl -L -o source.tar.gz "https://github.com/MikePopoloski/slang/archive/refs/tags/v6.0.tar.gz"
+          curl -L -o source.tar.gz "https://github.com/MikePopoloski/slang/archive/refs/tags/v7.0.tar.gz"
 
       - name: Extract Tarball
         run: |
@@ -55,7 +55,7 @@ jobs:
 
       - name: Download Slang Release
         run: |
-          curl -L -o source.tar.gz "https://github.com/MikePopoloski/slang/archive/refs/tags/v6.0.tar.gz"
+          curl -L -o source.tar.gz "https://github.com/MikePopoloski/slang/archive/refs/tags/v7.0.tar.gz"
 
       - name: Extract Tarball
         run: |
