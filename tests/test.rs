@@ -717,4 +717,62 @@ endmodule
             }]
         );
     }
+
+    #[test]
+    fn test_protected() {
+        let verilog = str2tmpfile(
+            "
+        module foo(
+            input a
+        );
+            `protected
+            asdf
+            `endprotected
+        endmodule",
+        )
+        .unwrap();
+
+        let cfg = SlangConfig {
+            sources: &[verilog.path().to_str().unwrap()],
+            ..Default::default()
+        };
+
+        let definitions = extract_ports(&cfg, false);
+        assert_eq!(
+            definitions["foo"],
+            vec![Port {
+                dir: PortDir::Input,
+                name: "a".to_string(),
+                ty: Type::Logic {
+                    signed: false,
+                    packed_dimensions: vec![],
+                    unpacked_dimensions: vec![],
+                },
+            }]
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "unknown macro")]
+    fn test_protected_panic() {
+        let verilog = str2tmpfile(
+            "
+        module foo(
+            input a
+        );
+            `protected
+            asdf
+            `endprotected
+        endmodule",
+        )
+        .unwrap();
+
+        let cfg = SlangConfig {
+            sources: &[verilog.path().to_str().unwrap()],
+            ignore_protected: false,
+            ..Default::default()
+        };
+
+        extract_ports(&cfg, false);
+    }
 }

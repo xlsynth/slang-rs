@@ -18,6 +18,7 @@ pub struct SlangConfig<'a> {
     pub libdirs: &'a [&'a str],
     pub libexts: &'a [&'a str],
     pub ignore_unknown_modules: bool,
+    pub ignore_protected: bool,
     pub timescale: Option<&'a str>,
 }
 
@@ -33,6 +34,7 @@ impl<'a> Default for SlangConfig<'a> {
             libdirs: &[],
             libexts: &[],
             ignore_unknown_modules: true,
+            ignore_protected: true,
             timescale: None,
         }
     }
@@ -43,6 +45,32 @@ fn find_slang() -> Option<String> {
     which::which("slang")
         .ok()
         .map(|p| p.to_string_lossy().to_string())
+}
+
+/// Adds options needed to make slang ignore protected envelopes.
+fn push_options_to_ignore_protected(args: &mut Vec<&str>) {
+    let options = vec![
+        "--enable-legacy-protect",
+        "-Wno-protected-envelope",
+        "-Wno-expected-protect-arg",
+        "-Wno-expected-protect-keyword",
+        "-Wno-extra-protect-end",
+        "-Wno-invalid-encoding-byte",
+        "-Wno-invalid-pragma-number",
+        "-Wno-invalid-pragma-viewport",
+        "-Wno-nested-protect-begin",
+        "-Wno-protect-arglist",
+        "-Wno-protect-encoding-bytes",
+        "-Wno-protected-envelope",
+        "-Wno-raw-protect-eof",
+        "-Wno-unknown-protect-encoding",
+        "-Wno-unknown-protect-keyword",
+        "-Wno-unknown-protect-option",
+    ];
+
+    for option in options {
+        args.push(option);
+    }
 }
 
 pub fn run_slang(cfg: &SlangConfig) -> Result<Value, Box<dyn std::error::Error>> {
@@ -67,6 +95,10 @@ pub fn run_slang(cfg: &SlangConfig) -> Result<Value, Box<dyn std::error::Error>>
 
     if cfg.ignore_unknown_modules {
         args.push("--ignore-unknown-modules");
+    }
+
+    if cfg.ignore_protected {
+        push_options_to_ignore_protected(&mut args);
     }
 
     let param_args: Vec<String> = cfg
