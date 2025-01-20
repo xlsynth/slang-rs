@@ -6,9 +6,13 @@ identifier = @{ (ASCII_ALPHANUMERIC | "_")+ }
 
 full_identifier = @{ (ASCII_ALPHANUMERIC | "_" | ":")+ }
 
-number = @{ ASCII_DIGIT+ }
+negative_sign = { "-" }
 
-range = { number ~ ":" ~ number }
+non_negative_integer = { ASCII_DIGIT+ }
+
+integer = { negative_sign? ~ non_negative_integer }
+
+range = { integer ~ ":" ~ integer }
 
 packed_dimension = { "[" ~ range ~ "]" }
 
@@ -34,9 +38,7 @@ field = { allowed_type ~ identifier }
 
 field_list = { field ~ (";" ~ field)* ~ (";")? }
 
-negative_sign = { "-" }
-
-verilog_decimal = { negative_sign? ~ number ~ "'" ~ ("s")? ~ "d" ~ number }
+verilog_decimal = { negative_sign? ~ non_negative_integer ~ "'" ~ ("s")? ~ "d" ~ non_negative_integer }
 
 variant = { identifier ~ "=" ~ verilog_decimal }
 
