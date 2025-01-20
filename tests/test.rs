@@ -197,7 +197,6 @@ mod tests {
         };
 
         let definitions = extract_ports(&cfg, true);
-        println!("{:?}", definitions);
         assert_eq!(
             definitions["foo"],
             vec![
@@ -266,8 +265,6 @@ mod tests {
         };
 
         let definitions = extract_ports(&cfg, false);
-        println!("{:?}", definitions);
-
         assert_eq!(
             definitions["foo"],
             vec![
@@ -442,8 +439,6 @@ mod tests {
         };
 
         let definitions = extract_ports(&cfg, false);
-        println!("{:?}", definitions);
-
         assert_eq!(
             definitions["foo"],
             vec![
@@ -531,8 +526,6 @@ mod tests {
         };
 
         let definitions = extract_ports(&cfg, false);
-        println!("{:?}", definitions);
-
         assert_eq!(
             definitions["foo"],
             vec![
@@ -774,5 +767,42 @@ endmodule
         };
 
         extract_ports(&cfg, false);
+    }
+
+    #[test]
+    fn test_negative_indices() {
+        let verilog = str2tmpfile(
+            "
+        module foo #(
+            parameter N=1
+        ) (
+            input [N-1:0] a
+        );
+        endmodule",
+        )
+        .unwrap();
+
+        let cfg = SlangConfig {
+            sources: &[verilog.path().to_str().unwrap()],
+            parameters: &[("N", "0")],
+            ..Default::default()
+        };
+
+        let definitions = extract_ports(&cfg, false);
+
+        assert_eq!(
+            definitions["foo"],
+            vec![Port {
+                dir: PortDir::Input,
+                name: "a".to_string(),
+                ty: Type::Logic {
+                    signed: false,
+                    packed_dimensions: vec![Range { msb: -1, lsb: 0 }],
+                    unpacked_dimensions: vec![],
+                },
+            },]
+        );
+
+        assert_eq!(definitions["foo"][0].ty.width().unwrap(), 2);
     }
 }

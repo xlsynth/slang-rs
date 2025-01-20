@@ -46,8 +46,8 @@ pub struct Field {
 
 #[derive(Debug, PartialEq)]
 pub struct Range {
-    pub msb: usize,
-    pub lsb: usize,
+    pub msb: i32,
+    pub lsb: i32,
 }
 
 #[derive(Debug, PartialEq)]
@@ -104,7 +104,7 @@ impl Type {
         Ok(self
             .packed_dimensions()
             .iter()
-            .map(|Range { msb, lsb }| msb - lsb + 1)
+            .map(|Range { msb, lsb }| ((msb - lsb).abs() + 1) as usize)
             .product())
     }
 
@@ -363,8 +363,8 @@ fn build_variant(pair: pest::iterators::Pair<Rule>) -> Variant {
 
 fn build_range(pair: pest::iterators::Pair<Rule>) -> Range {
     let mut inner = pair.into_inner();
-    let msb = inner.next().unwrap().as_str().parse::<usize>().unwrap();
-    let lsb = inner.next().unwrap().as_str().parse::<usize>().unwrap();
+    let msb = inner.next().unwrap().as_str().parse::<i32>().unwrap();
+    let lsb = inner.next().unwrap().as_str().parse::<i32>().unwrap();
     Range { msb, lsb }
 }
 
