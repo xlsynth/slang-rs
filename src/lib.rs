@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use serde::Deserialize;
 use serde_json::Value;
 use std::fs::{self, write};
 use std::process::Command;
@@ -168,7 +169,16 @@ pub fn run_slang(cfg: &SlangConfig) -> Result<Value, Box<dyn std::error::Error>>
 
     // Read and parse the JSON output
     let json_data = fs::read_to_string(tmp_json)?;
-    let json_value: Value = serde_json::from_str(&json_data)?;
+    let mut json_deserializer = serde_json::Deserializer::from_str(&json_data);
+    // The recursion limit needs to be disabled since slang can produce
+    // deeply nested objects.
+    // Follows the example code here:
+    // https://docs.rs/serde_json/latest/serde_json/struct.Deserializer.html#method.disable_recursion_limit
+    json_deserializer.disable_recursion_limit();
+
+    let stacked_deserializer =
+        serde_stacker::Deserializer::new(&mut json_deserializer);
+    let json_value = Value::deserialize(stacked_deserializer)?;
 
     Ok(json_value)
 }

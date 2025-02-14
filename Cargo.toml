@@ -1,6 +1,6 @@
 [package]
 name = "slang-rs"
-version = "0.14.0"
+version = "0.15.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "Rust bindings for the Slang Verilog parser"
@@ -10,7 +10,9 @@ documentation = "https://docs.rs/slang-rs"
 
 [dependencies]
 regex = "1.10.6"
-serde_json = "1.0.128"
+serde = "1.0"
+serde_json = { version = "1.0.128", features = ["unbounded_depth"] }
+serde_stacker = "0.1"
 tempfile = "3"
 pest = "2.1"
 pest_derive = "2.1"
