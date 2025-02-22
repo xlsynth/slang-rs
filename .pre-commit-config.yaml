@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: Apache-2.0
+
+# adapted from:
+# * https://github.com/xlsynth/xlsynth-crate/blob/main/.pre-commit-config.yaml
+# * https://github.com/xlsynth/bedrock-rtl/blob/main/.pre-commit-config.yaml
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-symlinks
+      - id: destroyed-symlinks
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-ast
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+      - id: detect-private-key
+      - id: debug-statements
+      - id: mixed-line-ending
+      - id: no-commit-to-branch
+        args: ['--branch', 'main']
+  - repo: local
+    hooks:
+      - id: rustfmt
+        name: rustfmt
+        description: Check if all files follow the rustfmt style
+        entry: cargo fmt --all -- --check --color always
+        language: system
+        pass_filenames: false
+
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 0.7.17  # Use a version that supports Python 3.8
+    hooks:
+    - id: mdformat

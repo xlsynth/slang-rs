@@ -1,4 +1,5 @@
 # slang-rs
+
 Parse SystemVerilog with Slang using a Rust API.
 
 Note: the API is currently under development and is subject to frequent changes.
@@ -55,4 +56,26 @@ cd slang-rs
 
 ```shell
 cargo test
+```
+
+## Development
+
+We use [pre-commit](https://pre-commit.com/) as part of our CI pipeline.
+
+If you haven't already installed `pre-commit`, you can do so with:
+
+```shell
+pip install pre-commit
+```
+
+Then install the pre-commit hooks for this repository with:
+
+```shell
+pre-commit install
+```
+
+The pre-commit hooks will run automatically when you attempt to commit code. You can also run pre-commit checks on-demand with:
+
+```shell
+pre-commit run
 ```
