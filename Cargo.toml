@@ -1,6 +1,6 @@
 [package]
 name = "slang-rs"
-version = "0.15.0"
+version = "0.16.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "Rust bindings for the Slang Verilog parser"
@@ -19,3 +19,11 @@ pest_derive = "2.1"
 num-bigint = "0.4.3"
 num-traits = "0.2"
 which = "7.0.0"
+
+[dev-dependencies]
+cargo_metadata = "0.18"
+curl = "0.4"
+log = "0.4"
+toml = "0.5"
+semver = "1.0"
+env_logger = "0.11"

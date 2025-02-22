@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: Apache-2.0
+
+# adapted from https://github.com/xlsynth/xlsynth-crate/blob/main/.github/workflows/publish.yml
+
+name: Publish to crates.io
+
+on:
+  push:
+    tags:
+      - 'v*' # This will trigger the workflow on version tags like v1.0.0, v0.1.0, etc.
+
+jobs:
+  publish:
+    runs-on: macos-latest
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+
+    - name: Validate version matches
+      run: |
+        # GITHUB_REF will be something like "refs/tags/v0.0.57"
+        # We'll strip off the "refs/tags/" part, leaving "v0.0.57".
+        VERSION="${GITHUB_REF#refs/tags/}"
+
+        # Now invoke the Python script, passing the version.
+        python check_version_is.py "$VERSION"
+
+    - name: Download Slang
+      run: |
+        curl -L -o slang "https://github.com/xlsynth/slang-rs/releases/download/ci/slang"
+        chmod +x slang
+
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo registry
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-registry-
+
+    - name: Cache Cargo index
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-index-
+
+    - name: Build and test
+      run: |
+        export SLANG_PATH=`realpath slang`
+        cargo test
+
+    - name: Publish slang-rs to crates.io
+      env:
+        CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+      run: |
+        cargo publish --token $CARGO_REGISTRY_TOKEN

@@ -176,8 +176,7 @@ pub fn run_slang(cfg: &SlangConfig) -> Result<Value, Box<dyn std::error::Error>>
     // https://docs.rs/serde_json/latest/serde_json/struct.Deserializer.html#method.disable_recursion_limit
     json_deserializer.disable_recursion_limit();
 
-    let stacked_deserializer =
-        serde_stacker::Deserializer::new(&mut json_deserializer);
+    let stacked_deserializer = serde_stacker::Deserializer::new(&mut json_deserializer);
     let json_value = Value::deserialize(stacked_deserializer)?;
 
     Ok(json_value)

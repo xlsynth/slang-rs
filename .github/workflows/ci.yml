@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
+# adapted from https://github.com/xlsynth/xlsynth-crate/blob/main/.github/workflows/ci.yml
+
 name: Rust CI
 
 on:
@@ -10,12 +12,42 @@ on:
       - main
 
 jobs:
-  test:
-
+  # -----------------------------------------------------------
+  # 1) Lint-check / pre-commit gate
+  # -----------------------------------------------------------
+  lint-check:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Set up Python + pre-commit
+        run: |
+          python -m pip install --upgrade pip
+          pip install pre-commit
+
+      - name: Run pre-commit
+        env:
+          SKIP: no-commit-to-branch
+        run: |
+          pre-commit install
+          pre-commit run --all-files
+
+  # -----------------------------------------------------------
+  # 2) Build/test
+  # -----------------------------------------------------------
+  build-and-test:
+    needs: [lint-check]  # Ensure lint checks pass first
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-24.04]  # TODO: add more OSes in the future
+      fail-fast: false
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
 
       - name: Set up Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
