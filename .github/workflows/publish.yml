@@ -11,7 +11,7 @@ on:
 
 jobs:
   publish:
-    runs-on: macos-latest
+    runs-on: ubuntu-24.04
 
     steps:
     - name: Check out code
@@ -53,9 +53,7 @@ jobs:
           ${{ runner.os }}-cargo-index-
 
     - name: Build and test
-      run: |
-        export SLANG_PATH=`realpath slang`
-        cargo test
+      run: export SLANG_PATH=`realpath slang` && cargo test
 
     - name: Publish slang-rs to crates.io
       env:
