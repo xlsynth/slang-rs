@@ -20,8 +20,8 @@ print(f"Argument version: {arg_version!r}")
 tag_version = arg_version.lstrip('v')
 print(f"Tag version:       {tag_version!r}")
 
-# Read the version from xlsynth-sys/Cargo.toml
-toml_path = os.path.join("xlsynth-sys", "Cargo.toml")
+# Read the version from Cargo.toml
+toml_path = "Cargo.toml"
 with open(toml_path, "r", encoding="utf-8") as f:
     cargo_toml = f.read()
 
@@ -30,7 +30,7 @@ print(f"Cargo.toml: {cargo_toml!r}")
 # Use a regex to extract the version from a line like: version = "0.0.57"
 match = re.search(r'^version\s*=\s*"([^"]+)"', cargo_toml, re.MULTILINE)
 if not match:
-    print("Error: Could not find a valid `version = \"...\"` line in xlsynth-sys/Cargo.toml.")
+    print("Error: Could not find a valid `version = \"...\"` line in Cargo.toml.")
     sys.exit(1)
 
 cargo_version = match.group(1)
@@ -42,7 +42,7 @@ print(f"Cargo.toml version: {cargo_version!r}")
 if cargo_version != tag_version:
     print(
         f"Error: version mismatch. "
-        f"Tag is {tag_version!r}, but xlsynth-sys/Cargo.toml is {cargo_version!r}."
+        f"Tag is {tag_version!r}, but Cargo.toml is {cargo_version!r}."
     )
     sys.exit(1)
 
