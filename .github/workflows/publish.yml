@@ -26,11 +26,6 @@ jobs:
         # Now invoke the Python script, passing the version.
         python check_version_is.py "$VERSION"
 
-    - name: Download Slang
-      run: |
-        curl -L -o slang "https://github.com/xlsynth/slang-rs/releases/download/ci/slang"
-        chmod +x slang
-
     - name: Set up Rust
       uses: actions-rs/toolchain@v1
       with:
@@ -53,7 +48,12 @@ jobs:
           ${{ runner.os }}-cargo-index-
 
     - name: Build and test
-      run: export SLANG_PATH=`realpath slang` && cargo test
+      run: |
+        curl -L -o slang "https://github.com/xlsynth/slang-rs/releases/download/ci/slang"
+        chmod +x slang
+        export SLANG_PATH=`realpath slang`
+        cargo test
+        rm slang
 
     - name: Publish slang-rs to crates.io
       env:
