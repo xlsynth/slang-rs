@@ -20,6 +20,9 @@ num-bigint = "0.4.3"
 num-traits = "0.2"
 which = "7.0.0"
 
+[build-dependencies]
+cmake = "0.1.54"
+
 [dev-dependencies]
 cargo_metadata = "0.18"
 curl = "0.4"
