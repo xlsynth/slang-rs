@@ -10,7 +10,7 @@ fn main() {
 	println!("cargo:rerun-if-changed=build.rs");
 
 	// Define the desired version for Slang.
-	const SLANG_VERSION: &str = "8.0";
+	const SLANG_VERSION: &str = "6.0";
 	// Compute the tarball URL at runtime.
 	let slang_tarball_url = format!(
 		"https://github.com/MikePopoloski/slang/archive/refs/tags/v{}.tar.gz",
