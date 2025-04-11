@@ -6,10 +6,16 @@ use std::fs::{self, write};
 use std::process::Command;
 
 mod extract;
-pub use extract::{extract_modules, extract_ports, Field, Port, PortDir, Range, Type, Variant};
+pub use extract::{
+    extract_modules, extract_modules_from_value, extract_ports, extract_ports_from_value, Field,
+    Port, PortDir, Range, Type, Variant,
+};
 
 mod hierarchy;
-pub use hierarchy::{extract_hierarchy, Instance};
+pub use hierarchy::{extract_hierarchy, extract_hierarchy_from_value, Instance};
+
+mod package;
+pub use package::{extract_packages, extract_packages_from_value, Package, Parameter};
 
 #[derive(Debug)]
 pub struct SlangConfig<'a> {
