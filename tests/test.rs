@@ -805,4 +805,38 @@ endmodule
 
         assert_eq!(definitions["foo"][0].ty.width().unwrap(), 2);
     }
+
+    #[test]
+    fn test_enum_conversion() {
+        let verilog = str2tmpfile(
+            "
+        typedef enum logic [1:0] {
+            A=0,
+            B=1,
+            C=2
+        } enum_t;
+
+        module foo (
+            output enum_t a,
+            input logic [1:0] b
+        );
+            assign a = b;
+        endmodule",
+        )
+        .unwrap();
+
+        let cfg = SlangConfig {
+            sources: &[verilog.path().to_str().unwrap()],
+            extra_arguments: &["--relax-enum-conversions"],
+            ..Default::default()
+        };
+
+        let ports = extract_ports(&cfg, false);
+
+        assert_eq!(ports["foo"].len(), 2);
+        assert_eq!(ports["foo"][0].name, "a");
+        assert_eq!(ports["foo"][0].ty.width().unwrap(), 2);
+        assert_eq!(ports["foo"][1].name, "b");
+        assert_eq!(ports["foo"][1].ty.width().unwrap(), 2);
+    }
 }
