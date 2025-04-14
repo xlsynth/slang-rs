@@ -30,6 +30,7 @@ pub struct SlangConfig<'a> {
     pub ignore_unknown_modules: bool,
     pub ignore_protected: bool,
     pub timescale: Option<&'a str>,
+    pub extra_arguments: &'a [&'a str],
 }
 
 impl<'a> Default for SlangConfig<'a> {
@@ -46,6 +47,7 @@ impl<'a> Default for SlangConfig<'a> {
             ignore_unknown_modules: true,
             ignore_protected: true,
             timescale: None,
+            extra_arguments: &[],
         }
     }
 }
@@ -109,6 +111,10 @@ pub fn run_slang(cfg: &SlangConfig) -> Result<Value, Box<dyn std::error::Error>>
 
     if cfg.ignore_protected {
         push_options_to_ignore_protected(&mut args);
+    }
+
+    for extra_arg in cfg.extra_arguments.iter() {
+        args.push(extra_arg);
     }
 
     let param_args: Vec<String> = cfg
