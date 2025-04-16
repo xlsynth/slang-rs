@@ -54,6 +54,19 @@ fn extract_hierarchy_from_value_helper(top: &mut Instance, value: &Value, hier_p
                         extract_hierarchy_from_value_helper(&mut inst, value, "".to_string());
                         top.contents.push(Rc::new(RefCell::new(inst)));
                     }
+                } else if kind == "UninstantiatedDef" {
+                    if let Some(inst_name) = member.get("name").and_then(|v| v.as_str()) {
+                        if let Some(def_name) =
+                            member.get("definitionName").and_then(|v| v.as_str())
+                        {
+                            top.contents.push(Rc::new(RefCell::new(Instance {
+                                def_name: def_name.to_string(),
+                                inst_name: inst_name.to_string(),
+                                hier_prefix: hier_prefix.clone(),
+                                contents: Vec::new(),
+                            })));
+                        }
+                    }
                 } else if kind == "GenerateBlock" {
                     if let Some((hier_prefix, value)) =
                         descend_into_generate_block(member, hier_prefix.clone(), &symbol_table)
