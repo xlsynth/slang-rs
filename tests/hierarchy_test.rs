@@ -177,4 +177,65 @@ endmodule
 
         extract_hierarchy(&cfg).unwrap();
     }
+
+    #[test]
+    fn test_unknown_module() {
+        let verilog = str2tmpfile(
+            "
+            module E;
+            endmodule
+            module A(
+              input clk
+            );
+              B b();
+              if (1) begin
+                C c();
+              end
+              if (0) begin
+                D d();
+              end
+              E e();
+            endmodule
+            ",
+        )
+        .unwrap();
+
+        let cfg = SlangConfig {
+            sources: &[verilog.path().to_str().unwrap()],
+            ..Default::default()
+        };
+
+        let hierarchy = extract_hierarchy(&cfg).unwrap();
+
+        let expected = HashMap::from([(
+            "A".to_string(),
+            Instance {
+                def_name: "A".to_string(),
+                inst_name: "A".to_string(),
+                hier_prefix: "".to_string(),
+                contents: vec![
+                    Rc::new(RefCell::new(Instance {
+                        def_name: "B".to_string(),
+                        inst_name: "b".to_string(),
+                        hier_prefix: "".to_string(),
+                        contents: vec![],
+                    })),
+                    Rc::new(RefCell::new(Instance {
+                        def_name: "C".to_string(),
+                        inst_name: "c".to_string(),
+                        hier_prefix: ".genblk1".to_string(),
+                        contents: vec![],
+                    })),
+                    Rc::new(RefCell::new(Instance {
+                        def_name: "E".to_string(),
+                        inst_name: "e".to_string(),
+                        hier_prefix: "".to_string(),
+                        contents: vec![],
+                    })),
+                ],
+            },
+        )]);
+
+        assert_eq!(hierarchy, expected);
+    }
 }
