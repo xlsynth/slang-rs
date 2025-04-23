@@ -62,6 +62,13 @@ mod tests {
                                 value: "145".to_string(),
                             },
                         ),
+                        (
+                            "my_t".to_string(),
+                            Parameter {
+                                name: "my_t".to_string(),
+                                value: "logic[33:22]".to_string(),
+                            },
+                        ),
                     ]),
                 },
             ),
@@ -94,5 +101,58 @@ mod tests {
         };
 
         extract_packages(&cfg).unwrap();
+    }
+
+    #[test]
+    fn test_extract_type_alias() {
+        let verilog = str2tmpfile(
+            "
+            package my_pkg;
+              typedef struct packed {
+                logic [2:0] a;
+                logic [1:0] b;
+                logic c;
+              } my_struct_t;
+              typedef enum logic [1:0] {
+                Red = 0,
+                Green = 1,
+                Blue = 2
+              } my_enum_t;
+              typedef my_struct_t [3:0] my_array_t;
+            endpackage
+            ",
+        )
+        .unwrap();
+
+        let cfg = SlangConfig {
+            sources: &[verilog.path().to_str().unwrap()],
+            ..Default::default()
+        };
+
+        let pkgs = extract_packages(&cfg).unwrap();
+
+        assert_eq!(
+            parse_type_definition(&pkgs["my_pkg"]["my_struct_t"].value)
+                .unwrap()
+                .width()
+                .unwrap(),
+            6
+        );
+
+        assert_eq!(
+            parse_type_definition(&pkgs["my_pkg"]["my_enum_t"].value)
+                .unwrap()
+                .width()
+                .unwrap(),
+            2
+        );
+
+        assert_eq!(
+            parse_type_definition(&pkgs["my_pkg"]["my_array_t"].value)
+                .unwrap()
+                .width()
+                .unwrap(),
+            24
+        );
     }
 }

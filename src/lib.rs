@@ -7,8 +7,8 @@ use std::process::Command;
 
 mod extract;
 pub use extract::{
-    extract_modules, extract_modules_from_value, extract_ports, extract_ports_from_value, Field,
-    Port, PortDir, Range, Type, Variant,
+    extract_modules, extract_modules_from_value, extract_ports, extract_ports_from_value,
+    parse_type_definition, Field, Port, PortDir, Range, Type, Variant,
 };
 
 mod hierarchy;
