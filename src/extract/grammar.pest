@@ -4,7 +4,7 @@ WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
 
 identifier = @{ (ASCII_ALPHANUMERIC | "_")+ }
 
-full_identifier = @{ (ASCII_ALPHANUMERIC | "_" | ":")+ }
+full_identifier = @{ (ASCII_ALPHANUMERIC | "_" | ":" | "$")+ }
 
 negative_sign = { "-" }
 

@@ -112,6 +112,12 @@ fn extract_packages_from_compilation_unit(value: &Value, packages: &mut HashMap<
                                                 .parameters
                                                 .insert(parameter.name.clone(), parameter);
                                         }
+                                    } else if kind == "TypeAlias" {
+                                        if let Some(type_alias) = process_type_alias(member) {
+                                            package
+                                                .parameters
+                                                .insert(type_alias.name.clone(), type_alias);
+                                        }
                                     }
                                 }
                             }
@@ -130,6 +136,18 @@ fn process_parameter(member: &Value) -> Option<Parameter> {
             return Some(Parameter {
                 name: name.to_string(),
                 value: value.to_string(),
+            });
+        }
+    }
+    None
+}
+
+fn process_type_alias(member: &Value) -> Option<Parameter> {
+    if let Some(target) = member.get("target").and_then(|v| v.as_str()) {
+        if let Some(name) = member.get("name").and_then(|v| v.as_str()) {
+            return Some(Parameter {
+                name: name.to_string(),
+                value: target.to_string(),
             });
         }
     }

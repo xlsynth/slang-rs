@@ -142,6 +142,7 @@ impl Type {
     }
 }
 
+/// Parses a slang type definition (from --ast-json) into a `Type`
 pub fn parse_type_definition(input: &str) -> Result<Type, Box<dyn Error>> {
     let mut parse_tree = DataTypeParser::parse(Rule::top, input)?;
     let ty = parse_tree.next().unwrap().into_inner().next().unwrap();
