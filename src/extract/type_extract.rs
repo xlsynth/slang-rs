@@ -152,18 +152,24 @@ pub fn parse_type_definition(input: &str) -> Result<Type, Box<dyn Error>> {
 fn build_field_type(pair: pest::iterators::Pair<Rule>) -> Type {
     let inner_pair = pair.into_inner().next().unwrap();
     match inner_pair.as_rule() {
-        Rule::logic_type => build_logic_type(inner_pair),
+        Rule::logic_type => build_logic_type(inner_pair, None, false),
         Rule::struct_type => build_struct_or_union_type(inner_pair, false),
         Rule::union_type => build_struct_or_union_type(inner_pair, true),
         Rule::enum_type => build_enum_type(inner_pair),
+        Rule::int_type => build_logic_type(inner_pair, Some(Range { msb: 31, lsb: 0 }), true),
+        Rule::longint_type => build_logic_type(inner_pair, Some(Range { msb: 63, lsb: 0 }), true),
         _ => unreachable!(),
     }
 }
 
-fn build_logic_type(pair: pest::iterators::Pair<Rule>) -> Type {
+fn build_logic_type(
+    pair: pest::iterators::Pair<Rule>,
+    extra_packed_dimension: Option<Range>,
+    default_signed: bool,
+) -> Type {
     let inner = pair.into_inner();
 
-    let mut signed = false;
+    let mut signed = default_signed;
     let mut packed_dimensions = Vec::new();
     let mut unpacked_dimensions = Vec::new();
 
@@ -189,11 +195,17 @@ fn build_logic_type(pair: pest::iterators::Pair<Rule>) -> Type {
                     }
                 }
             }
-            Rule::signed_modifier => {
-                signed = true;
-            }
+            Rule::signed_modifier => match inner_pair.into_inner().next().unwrap().as_rule() {
+                Rule::signed_keyword => signed = true,
+                Rule::unsigned_keyword => signed = false,
+                _ => unreachable!(),
+            },
             _ => {}
         }
+    }
+
+    if let Some(final_packed_dimension) = extra_packed_dimension {
+        packed_dimensions.push(final_packed_dimension);
     }
 
     Type::Logic {
@@ -398,6 +410,58 @@ mod tests {
                     },
                 ],
                 packed_dimensions: vec![],
+                unpacked_dimensions: vec![],
+            }
+        );
+    }
+
+    #[test]
+    fn test_int() {
+        let type_def = parse_type_definition("int").unwrap();
+        assert_eq!(
+            type_def,
+            Type::Logic {
+                signed: true,
+                packed_dimensions: vec![Range { msb: 31, lsb: 0 }],
+                unpacked_dimensions: vec![],
+            }
+        );
+    }
+
+    #[test]
+    fn test_int_unsigned() {
+        let type_def = parse_type_definition("int unsigned").unwrap();
+        assert_eq!(
+            type_def,
+            Type::Logic {
+                signed: false,
+                packed_dimensions: vec![Range { msb: 31, lsb: 0 }],
+                unpacked_dimensions: vec![],
+            }
+        );
+    }
+
+    #[test]
+    fn test_int_long() {
+        let type_def = parse_type_definition("longint").unwrap();
+        assert_eq!(
+            type_def,
+            Type::Logic {
+                signed: true,
+                packed_dimensions: vec![Range { msb: 63, lsb: 0 }],
+                unpacked_dimensions: vec![],
+            }
+        );
+    }
+
+    #[test]
+    fn test_int_long_unsigned() {
+        let type_def = parse_type_definition("longint unsigned").unwrap();
+        assert_eq!(
+            type_def,
+            Type::Logic {
+                signed: false,
+                packed_dimensions: vec![Range { msb: 63, lsb: 0 }],
                 unpacked_dimensions: vec![],
             }
         );

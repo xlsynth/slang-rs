@@ -22,7 +22,11 @@ unpacked_dimensions = { packed_dimension* }
 
 dimensions = { packed_dimensions ~ ( "$" ~ unpacked_dimensions )? }
 
-signed_modifier = { "signed" }
+signed_keyword = { "signed" }
+
+unsigned_keyword = { "unsigned" }
+
+signed_modifier = { signed_keyword | unsigned_keyword }
 
 logic_type = { ( "logic" | "reg" | "bit" ) ~ signed_modifier? ~ dimensions }
 
@@ -32,7 +36,11 @@ union_type = { "union" ~ ("packed")? ~ "{" ~ field_list ~ "}" ~ full_identifier 
 
 enum_type = { "enum" ~ "{" ~ variant_list ~ "}" ~ full_identifier ~ dimensions }
 
-allowed_type = { logic_type | struct_type | union_type | enum_type }
+int_type = { "int" ~ signed_modifier? ~ dimensions }
+
+longint_type = { "longint" ~ signed_modifier? ~ dimensions }
+
+allowed_type = { logic_type | struct_type | union_type | enum_type | int_type | longint_type }
 
 field = { allowed_type ~ identifier }
 
