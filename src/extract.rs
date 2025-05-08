@@ -23,6 +23,11 @@ pub struct Port {
     pub ty: Type,
 }
 
+pub struct ParameterDef {
+    pub name: String,
+    pub ty: Type,
+}
+
 impl FromStr for PortDir {
     type Err = String;
 
@@ -148,6 +153,50 @@ pub fn extract_ports_from_value(
     }
 
     ports_map
+}
+
+pub fn extract_parameter_defs_from_value(
+    value: &Value,
+    skip_unsupported: bool,
+) -> HashMap<String, Vec<ParameterDef>> {
+    let mut parameters_map = HashMap::new();
+
+    for member in MemberIter::new(&value["design"], &["Instance"]) {
+        let module_name = member["name"].as_str().unwrap();
+        if module_name.is_empty() {
+            continue;
+        }
+        let mut parameters = Vec::new();
+        for instance_member in MemberIter::new(&member["body"], &["Parameter"]) {
+            let parameter_name = instance_member["name"].as_str().unwrap();
+            let type_str = instance_member["type"].as_str().unwrap();
+            match parse_type_definition_no_error(type_str) {
+                Ok(ty) => parameters.push(ParameterDef {
+                    name: parameter_name.to_string(),
+                    ty,
+                }),
+                Err(e) => {
+                    if skip_unsupported {
+                        continue;
+                    } else {
+                        panic!("{}", e);
+                    }
+                }
+            }
+        }
+        insert_to_vacant(&mut parameters_map, module_name.to_string(), parameters)
+            .expect(format!("Duplicate definition of module: {}", module_name).as_str());
+    }
+
+    parameters_map
+}
+
+pub fn extract_parameter_defs(
+    cfg: &crate::SlangConfig,
+    skip_unsupported: bool,
+) -> HashMap<String, Vec<ParameterDef>> {
+    let result = crate::run_slang(cfg).unwrap();
+    extract_parameter_defs_from_value(&result, skip_unsupported)
 }
 
 pub fn extract_modules_from_value(value: &Value) -> Result<Vec<String>, Box<dyn Error>> {

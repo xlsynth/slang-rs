@@ -839,4 +839,67 @@ endmodule
         assert_eq!(ports["foo"][1].name, "b");
         assert_eq!(ports["foo"][1].ty.width().unwrap(), 2);
     }
+
+    #[test]
+    fn test_extract_parameter_defs() {
+        let verilog = str2tmpfile(
+            "
+        module foo #(
+            parameter int IntParam = 1,
+            parameter int unsigned UnsignedParam = 2,
+            parameter longint LongIntParam = 3,
+            parameter bit BitParam = 1
+        ) (
+            input logic [IntParam-1:0] a,
+            output logic [UnsignedParam-1:0] b,
+            input logic [LongIntParam-1:0] c
+        );
+        endmodule",
+        )
+        .unwrap();
+
+        let cfg = SlangConfig {
+            sources: &[verilog.path().to_str().unwrap()],
+            ..Default::default()
+        };
+
+        let parameters = extract_parameter_defs(&cfg, false);
+        assert_eq!(parameters["foo"].len(), 4);
+        assert_eq!(parameters["foo"][0].name, "IntParam");
+        assert_eq!(
+            parameters["foo"][0].ty,
+            Type::Logic {
+                signed: true,
+                packed_dimensions: vec![Range { msb: 31, lsb: 0 }],
+                unpacked_dimensions: vec![],
+            }
+        );
+        assert_eq!(parameters["foo"][1].name, "UnsignedParam");
+        assert_eq!(
+            parameters["foo"][1].ty,
+            Type::Logic {
+                signed: false,
+                packed_dimensions: vec![Range { msb: 31, lsb: 0 }],
+                unpacked_dimensions: vec![],
+            }
+        );
+        assert_eq!(parameters["foo"][2].name, "LongIntParam");
+        assert_eq!(
+            parameters["foo"][2].ty,
+            Type::Logic {
+                signed: true,
+                packed_dimensions: vec![Range { msb: 63, lsb: 0 }],
+                unpacked_dimensions: vec![],
+            }
+        );
+        assert_eq!(parameters["foo"][3].name, "BitParam");
+        assert_eq!(
+            parameters["foo"][3].ty,
+            Type::Logic {
+                signed: false,
+                packed_dimensions: vec![],
+                unpacked_dimensions: vec![],
+            }
+        );
+    }
 }
