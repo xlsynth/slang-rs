@@ -3,6 +3,7 @@
 use serde_json::Value;
 use std::collections::{hash_map::Entry, HashMap};
 use std::error::Error;
+use std::hash::Hash;
 use std::str::FromStr;
 
 mod type_extract;
@@ -43,70 +44,107 @@ pub fn extract_ports(
     extract_ports_from_value(&result, skip_unsupported)
 }
 
+struct MemberIter<'a> {
+    members: Option<&'a Vec<Value>>,
+    kinds: &'a [&'a str],
+    current: usize,
+}
+
+impl<'a> MemberIter<'a> {
+    fn new(value: &'a Value, kinds: &'a [&'a str]) -> Self {
+        Self {
+            members: value["members"].as_array(),
+            kinds,
+            current: 0,
+        }
+    }
+}
+
+impl<'a> Iterator for MemberIter<'a> {
+    type Item = &'a Value;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(members) = self.members {
+            while self.current < members.len() {
+                let member = &members[self.current];
+                let kind = member["kind"].as_str().unwrap();
+                self.current += 1;
+                if self.kinds.contains(&kind) {
+                    return Some(member);
+                }
+            }
+            None
+        } else {
+            None
+        }
+    }
+}
+
+fn parse_type_definition_no_error(type_str: &str) -> Result<Type, Box<dyn Error>> {
+    if type_str == "<error>" {
+        Err("Found \"<error>\" type in Slang JSON output.")?;
+    }
+    parse_type_definition(type_str)
+}
+
+fn insert_to_vacant<K, V>(map: &mut HashMap<K, V>, key: K, value: V) -> Result<(), String>
+where
+    K: Eq,
+    K: Hash,
+{
+    match map.entry(key) {
+        Entry::Vacant(entry) => {
+            entry.insert(value);
+            Ok(())
+        }
+        Entry::Occupied(_) => Err(String::from("Duplicate insertion")),
+    }
+}
+
 pub fn extract_ports_from_value(
     value: &Value,
     skip_unsupported: bool,
 ) -> HashMap<String, Vec<Port>> {
     let mut ports_map = HashMap::new();
 
-    if let Some(members) = value["design"]["members"].as_array() {
-        for member in members {
-            if member["kind"] == "Instance" {
-                let module_name = member["name"].as_str().unwrap();
-                if module_name.is_empty() {
-                    continue;
-                }
-                let mut ports = Vec::new();
-                if let Some(instance_body_members) = member["body"]["members"].as_array() {
-                    for instance_member in instance_body_members {
-                        let kind = instance_member["kind"].as_str().unwrap();
-                        match kind {
-                            "Port" => {
-                                let port_name = instance_member["name"].as_str().unwrap();
-                                let direction = instance_member["direction"].as_str().unwrap();
-                                let type_str = instance_member["type"].as_str().unwrap();
-                                if type_str == "<error>" {
-                                    if skip_unsupported {
-                                        continue;
-                                    } else {
-                                        panic!("Found \"<error>\" type in Slang JSON output.");
-                                    }
-                                }
-                                let ty = match parse_type_definition(type_str) {
-                                    Ok(ty) => ty,
-                                    Err(e) => {
-                                        if !skip_unsupported {
-                                            panic!("{}", e);
-                                        } else {
-                                            continue;
-                                        }
-                                    }
-                                };
-                                ports.push(Port {
-                                    dir: PortDir::from_str(direction).unwrap(),
-                                    name: port_name.to_string(),
-                                    ty,
-                                });
+    for member in MemberIter::new(&value["design"], &["Instance"]) {
+        let module_name = member["name"].as_str().unwrap();
+        if module_name.is_empty() {
+            continue;
+        }
+        let mut ports = Vec::new();
+        for instance_member in MemberIter::new(&member["body"], &["Port", "InterfacePort"]) {
+            let kind = instance_member["kind"].as_str().unwrap();
+            match kind {
+                "Port" => {
+                    let port_name = instance_member["name"].as_str().unwrap();
+                    let direction = instance_member["direction"].as_str().unwrap();
+                    let type_str = instance_member["type"].as_str().unwrap();
+                    match parse_type_definition_no_error(type_str) {
+                        Ok(ty) => ports.push(Port {
+                            dir: PortDir::from_str(direction).unwrap(),
+                            name: port_name.to_string(),
+                            ty,
+                        }),
+                        Err(e) => {
+                            if skip_unsupported {
+                                continue;
+                            } else {
+                                panic!("{}", e);
                             }
-                            "InterfacePort" => {
-                                if !skip_unsupported {
-                                    panic!("Interface ports are not currently supported.")
-                                }
-                            }
-                            _ => continue,
                         }
                     }
                 }
-                match ports_map.entry(module_name.to_string()) {
-                    Entry::Vacant(entry) => {
-                        entry.insert(ports);
-                    }
-                    Entry::Occupied(entry) => {
-                        panic!("Duplicate definition of module: {}", entry.key());
+                "InterfacePort" => {
+                    if !skip_unsupported {
+                        panic!("Interface ports are not currently supported.")
                     }
                 }
+                _ => continue,
             }
         }
+        insert_to_vacant(&mut ports_map, module_name.to_string(), ports)
+            .expect(format!("Duplicate definition of module: {}", module_name).as_str());
     }
 
     ports_map
