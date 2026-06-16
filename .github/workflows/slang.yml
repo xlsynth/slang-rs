@@ -13,8 +13,8 @@ jobs:
       - name: Download Slang Release
         run: |
           curl --fail --location --proto '=https' --tlsv1.2 -o source.tar.gz \
-            "https://github.com/MikePopoloski/slang/archive/refs/tags/v7.0.tar.gz"
-          echo "5faa9bdac043b81eb489f0dd0de36443f6d5868460b7b442df87a6e8210e8547  source.tar.gz" | sha256sum -c -
+            "https://github.com/MikePopoloski/slang/archive/refs/tags/v11.0.tar.gz"
+          echo "50676d5a9adbefb97d266a4b174e6b0513901afd5ac57a6cdfea0a61149c3704  source.tar.gz" | sha256sum -c -
 
       - name: Extract Tarball
         run: |
@@ -58,8 +58,8 @@ jobs:
       - name: Download Slang Release
         run: |
           curl --fail --location --proto '=https' --tlsv1.2 -o source.tar.gz \
-            "https://github.com/MikePopoloski/slang/archive/refs/tags/v7.0.tar.gz"
-          echo "5faa9bdac043b81eb489f0dd0de36443f6d5868460b7b442df87a6e8210e8547  source.tar.gz" | sha256sum -c -
+            "https://github.com/MikePopoloski/slang/archive/refs/tags/v11.0.tar.gz"
+          echo "50676d5a9adbefb97d266a4b174e6b0513901afd5ac57a6cdfea0a61149c3704  source.tar.gz" | sha256sum -c -
 
       - name: Extract Tarball
         run: |

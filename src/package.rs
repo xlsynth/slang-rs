@@ -76,6 +76,7 @@ pub fn extract_packages(
 
 pub fn extract_packages_from_value(value: &Value) -> HashMap<String, Package> {
     let mut packages = HashMap::new();
+    let type_resolver = crate::extract::TypeResolver::new(value);
 
     if let Some(members) = value
         .get("design")
@@ -84,7 +85,7 @@ pub fn extract_packages_from_value(value: &Value) -> HashMap<String, Package> {
         for member in members {
             if let Some(kind) = member.get("kind") {
                 if kind == "CompilationUnit" {
-                    extract_packages_from_compilation_unit(member, &mut packages);
+                    extract_packages_from_compilation_unit(member, &mut packages, &type_resolver);
                 }
             }
         }
@@ -93,7 +94,11 @@ pub fn extract_packages_from_value(value: &Value) -> HashMap<String, Package> {
     packages
 }
 
-fn extract_packages_from_compilation_unit(value: &Value, packages: &mut HashMap<String, Package>) {
+fn extract_packages_from_compilation_unit(
+    value: &Value,
+    packages: &mut HashMap<String, Package>,
+    type_resolver: &crate::extract::TypeResolver,
+) {
     if let Some(members) = value.get("members").and_then(|v| v.as_array()) {
         for member in members {
             if let Some(kind) = member.get("kind") {
@@ -113,7 +118,9 @@ fn extract_packages_from_compilation_unit(value: &Value, packages: &mut HashMap<
                                                 .insert(parameter.name.clone(), parameter);
                                         }
                                     } else if kind == "TypeAlias" {
-                                        if let Some(type_alias) = process_type_alias(member) {
+                                        if let Some(type_alias) =
+                                            process_type_alias(member, type_resolver)
+                                        {
                                             package
                                                 .parameters
                                                 .insert(type_alias.name.clone(), type_alias);
@@ -142,12 +149,17 @@ fn process_parameter(member: &Value) -> Option<Parameter> {
     None
 }
 
-fn process_type_alias(member: &Value) -> Option<Parameter> {
+fn process_type_alias(
+    member: &Value,
+    type_resolver: &crate::extract::TypeResolver,
+) -> Option<Parameter> {
     if let Some(target) = member.get("target").and_then(|v| v.as_str()) {
         if let Some(name) = member.get("name").and_then(|v| v.as_str()) {
             return Some(Parameter {
                 name: name.to_string(),
-                value: target.to_string(),
+                value: type_resolver
+                    .resolve_alias(member, name)
+                    .unwrap_or_else(|| type_resolver.resolve(target)),
             });
         }
     }

@@ -4,19 +4,29 @@ Parse SystemVerilog with Slang using a Rust API.
 
 Note: the API is currently under development and is subject to frequent changes.
 
+## Slang version compatibility
+
+Slang 11.0 is the currently supported release and the version used by this
+project's CI and installation instructions.
+
+Older Slang releases may continue to work, but are considered deprecated and
+are not guaranteed to remain compatible in future `slang-rs` releases. Slang
+7.0 has been tested with the current compatibility layer; other older versions
+have not been validated.
+
 ## Prerequisite
 
 First install the Slang parser. We recommend building it from source.
 
 ```shell
-curl --fail --location --proto '=https' --tlsv1.2 -o v6.0.tar.gz \
-  "https://github.com/MikePopoloski/slang/archive/refs/tags/v6.0.tar.gz"
-echo "c4c43f4ef7e2dcaca15541442f9e75ce8749eb0a16224b7c1a6a3c42ae468179  v6.0.tar.gz" | sha256sum -c -
-tar xzvf v6.0.tar.gz
+curl --fail --location --proto '=https' --tlsv1.2 -o v11.0.tar.gz \
+  "https://github.com/MikePopoloski/slang/archive/refs/tags/v11.0.tar.gz"
+echo "50676d5a9adbefb97d266a4b174e6b0513901afd5ac57a6cdfea0a61149c3704  v11.0.tar.gz" | sha256sum -c -
+tar xzvf v11.0.tar.gz
 ```
 
 ```shell
-cd slang-6.0
+cd slang-11.0
 ```
 
 ```shell
