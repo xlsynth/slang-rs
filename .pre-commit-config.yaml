@@ -5,27 +5,91 @@
 # * https://github.com/xlsynth/bedrock-rtl/blob/main/.pre-commit-config.yaml
 
 repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b  # v5.0.0
-    hooks:
-      - id: check-symlinks
-      - id: destroyed-symlinks
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-      - id: check-yaml
-      - id: check-toml
-      - id: check-ast
-      - id: check-added-large-files
-      - id: check-merge-conflict
-      - id: check-executables-have-shebangs
-      - id: check-shebang-scripts-are-executable
-      - id: detect-private-key
-      - id: debug-statements
-      - id: mixed-line-ending
-      - id: no-commit-to-branch
-        args: ['--branch', 'main']
   - repo: local
     hooks:
+      - id: check-symlinks
+        name: check for broken symlinks
+        entry: check-symlinks
+        language: system
+        types: [symlink]
+      - id: destroyed-symlinks
+        name: detect destroyed symlinks
+        entry: destroyed-symlinks
+        language: system
+        types: [file]
+        stages: [pre-commit, pre-push, manual]
+      - id: trailing-whitespace
+        name: trim trailing whitespace
+        entry: trailing-whitespace-fixer
+        language: system
+        types: [text]
+        stages: [pre-commit, pre-push, manual]
+      - id: end-of-file-fixer
+        name: fix end of files
+        entry: end-of-file-fixer
+        language: system
+        types: [text]
+        stages: [pre-commit, pre-push, manual]
+      - id: check-yaml
+        name: check yaml
+        entry: check-yaml
+        language: system
+        types: [yaml]
+      - id: check-toml
+        name: check toml
+        entry: check-toml
+        language: system
+        types: [toml]
+      - id: check-ast
+        name: check python ast
+        entry: check-ast
+        language: system
+        types: [python]
+      - id: check-added-large-files
+        name: check for added large files
+        entry: check-added-large-files
+        language: system
+        stages: [pre-commit, pre-push, manual]
+      - id: check-merge-conflict
+        name: check for merge conflicts
+        entry: check-merge-conflict
+        language: system
+        types: [text]
+      - id: check-executables-have-shebangs
+        name: check that executables have shebangs
+        entry: check-executables-have-shebangs
+        language: system
+        types: [text, executable]
+        stages: [pre-commit, pre-push, manual]
+      - id: check-shebang-scripts-are-executable
+        name: check that scripts with shebangs are executable
+        entry: check-shebang-scripts-are-executable
+        language: system
+        types: [text]
+        stages: [pre-commit, pre-push, manual]
+      - id: detect-private-key
+        name: detect private key
+        entry: detect-private-key
+        language: system
+        types: [text]
+      - id: debug-statements
+        name: debug statements (python)
+        entry: debug-statement-hook
+        language: system
+        types: [python]
+      - id: mixed-line-ending
+        name: mixed line ending
+        entry: mixed-line-ending
+        language: system
+        types: [text]
+      - id: no-commit-to-branch
+        name: don't commit to branch
+        entry: no-commit-to-branch
+        language: system
+        pass_filenames: false
+        always_run: true
+        args: ['--branch', 'main']
+
       - id: rustfmt
         name: rustfmt
         description: Check if all files follow the rustfmt style
