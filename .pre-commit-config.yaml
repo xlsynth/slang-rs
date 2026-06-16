@@ -6,7 +6,7 @@
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b  # v5.0.0
     hooks:
       - id: check-symlinks
       - id: destroyed-symlinks
@@ -33,7 +33,9 @@ repos:
         language: system
         pass_filenames: false
 
-  - repo: https://github.com/executablebooks/mdformat
-    rev: 0.7.17  # Use a version that supports Python 3.8
-    hooks:
-    - id: mdformat
+      - id: mdformat
+        name: mdformat
+        description: Format Markdown using the hash-locked CI installation
+        entry: mdformat
+        language: system
+        types: [markdown]

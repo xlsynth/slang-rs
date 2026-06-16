@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use serde_json::Value;
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{HashMap, hash_map::Entry};
 use std::error::Error;
 use std::hash::Hash;
 use std::str::FromStr;
 
 mod type_extract;
-pub use type_extract::{parse_type_definition, Field, Range, Type, Variant};
+pub use type_extract::{Field, Range, Type, Variant, parse_type_definition};
 
 #[derive(Debug, PartialEq)]
 pub enum PortDir {
