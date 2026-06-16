@@ -5,6 +5,11 @@
 # * https://github.com/xlsynth/bedrock-rtl/blob/main/.pre-commit-config.yaml
 
 repos:
+  # Keep these as system hooks backed by requirements-ci.txt. Pinning the
+  # pre-commit-hooks repository alone does not pin the Python dependencies that
+  # pre-commit resolves in its private hook environment (for example,
+  # ruamel.yaml). Install the hash-locked requirements and run pre-commit from
+  # that environment so both the hook code and its dependencies are reproducible.
   - repo: local
     hooks:
       - id: check-symlinks
