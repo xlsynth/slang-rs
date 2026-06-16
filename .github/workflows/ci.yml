@@ -20,12 +20,22 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v3
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          toolchain: 1.85.0
+          components: rustfmt
 
       - name: Set up Python + pre-commit
         run: |
-          python -m pip install --upgrade pip
-          pip install pre-commit
+          python -m pip install --require-hashes -r requirements-ci.txt
 
       - name: Run pre-commit
         env:
@@ -47,15 +57,19 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v3
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Set up Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          toolchain: 1.85.0
 
       - name: Download Slang
         run: |
-          curl -L -o slang "https://github.com/xlsynth/slang-rs/releases/download/ci/slang"
+          curl --fail --location --proto '=https' --tlsv1.2 -o slang \
+            "https://github.com/xlsynth/slang-rs/releases/download/ci/slang"
+          echo "0ae872c4d877eb153b21a9f2c78409a27a8e8a46ec956176e8b5f4c1c09874ea  slang" | sha256sum -c -
           chmod +x slang
 
       - name: Run tests
-        run: export SLANG_PATH=`realpath slang` && cargo test
+        run: export SLANG_PATH=`realpath slang` && cargo test --locked
