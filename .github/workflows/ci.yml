@@ -66,10 +66,11 @@ jobs:
 
       - name: Download Slang
         run: |
-          curl --fail --location --proto '=https' --tlsv1.2 -o slang \
-            "https://github.com/xlsynth/slang-rs/releases/download/ci/slang"
-          echo "0ae872c4d877eb153b21a9f2c78409a27a8e8a46ec956176e8b5f4c1c09874ea  slang" | sha256sum -c -
-          chmod +x slang
+          curl --fail --location --proto '=https' --tlsv1.2 -o "$RUNNER_TEMP/slang.tar.gz" \
+            "https://github.com/MikePopoloski/slang/releases/download/v11.0/slang-linux-x86_64.tar.gz"
+          echo "951a170e10e25e54c91565030acfdfc11c3226714ebf225a18ad4166a898d8a4  $RUNNER_TEMP/slang.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/slang.tar.gz" -C "$RUNNER_TEMP"
+          chmod +x "$RUNNER_TEMP/slang"
 
       - name: Run tests
-        run: export SLANG_PATH=`realpath slang` && cargo test --locked
+        run: SLANG_PATH="$RUNNER_TEMP/slang" cargo test --locked
