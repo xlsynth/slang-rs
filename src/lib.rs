@@ -3,7 +3,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 use std::fs::{self, write};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 mod extract;
 pub use extract::{
@@ -30,6 +30,7 @@ pub struct SlangConfig<'a> {
     pub libexts: &'a [&'a str],
     pub ignore_unknown_modules: bool,
     pub ignore_protected: bool,
+    pub capture_stdio: bool,
     pub timescale: Option<&'a str>,
     pub extra_arguments: &'a [&'a str],
 }
@@ -47,6 +48,7 @@ impl<'a> Default for SlangConfig<'a> {
             libexts: &[],
             ignore_unknown_modules: true,
             ignore_protected: true,
+            capture_stdio: true,
             timescale: None,
             extra_arguments: &[],
         }
@@ -172,13 +174,25 @@ pub fn run_slang(cfg: &SlangConfig) -> Result<Value, Box<dyn std::error::Error>>
         args.push(source);
     }
 
-    let output = Command::new(slang_path).args(args).output()?;
+    let mut cmd = Command::new(slang_path);
+
+    cmd.args(args);
+    if !cfg.capture_stdio {
+        cmd.stderr(Stdio::inherit());
+        cmd.stdout(Stdio::inherit());
+    }
+
+    let output = cmd.output()?;
 
     if !output.status.success() {
+        let stderr = if cfg.capture_stdio {
+            String::from_utf8_lossy(&output.stderr).to_string()
+        } else {
+            "Not Captured".to_string()
+        };
         return Err(format!(
-            "slang command failed with exit code: {}, stderr: {}",
+            "slang command failed with exit code: {}, stderr: {stderr}",
             output.status,
-            String::from_utf8_lossy(&output.stderr)
         )
         .into());
     }
