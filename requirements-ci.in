@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+
+# Source inputs for the hash-locked CI tooling in requirements-ci.txt.
+mdformat==0.7.17
+pre-commit==4.2.0
+pre-commit-hooks==5.0.0

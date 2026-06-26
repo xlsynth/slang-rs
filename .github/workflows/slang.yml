@@ -7,12 +7,14 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Download Slang Release
         run: |
-          curl -L -o source.tar.gz "https://github.com/MikePopoloski/slang/archive/refs/tags/v7.0.tar.gz"
+          curl --fail --location --proto '=https' --tlsv1.2 -o source.tar.gz \
+            "https://github.com/MikePopoloski/slang/archive/refs/tags/v11.0.tar.gz"
+          echo "50676d5a9adbefb97d266a4b174e6b0513901afd5ac57a6cdfea0a61149c3704  source.tar.gz" | sha256sum -c -
 
       - name: Extract Tarball
         run: |
@@ -31,14 +33,14 @@ jobs:
           cmake --build build -j8
 
       - name: Upload Binary Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: slang
           path: 'source/build/bin/slang'
 
   build-rocky8:
-    runs-on: ubuntu-latest
-    container: rockylinux:8
+    runs-on: ubuntu-24.04
+    container: rockylinux:8@sha256:f5529992e67440c1a4ae7788244d4381c6909159a88eacd95b7523ae47ced82e
 
     steps:
       - name: Install Dependencies
@@ -55,7 +57,9 @@ jobs:
 
       - name: Download Slang Release
         run: |
-          curl -L -o source.tar.gz "https://github.com/MikePopoloski/slang/archive/refs/tags/v7.0.tar.gz"
+          curl --fail --location --proto '=https' --tlsv1.2 -o source.tar.gz \
+            "https://github.com/MikePopoloski/slang/archive/refs/tags/v11.0.tar.gz"
+          echo "50676d5a9adbefb97d266a4b174e6b0513901afd5ac57a6cdfea0a61149c3704  source.tar.gz" | sha256sum -c -
 
       - name: Extract Tarball
         run: |
@@ -69,7 +73,7 @@ jobs:
           CC=clang-18 CXX=clang++-18 cmake --build build -j8
 
       - name: Upload Binary Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: slang-rocky8
           path: 'source/build/bin/slang'

@@ -7,16 +7,16 @@ use std::process::{Command, Stdio};
 
 mod extract;
 pub use extract::{
-    extract_modules, extract_modules_from_value, extract_parameter_defs,
-    extract_parameter_defs_from_value, extract_ports, extract_ports_from_value,
-    parse_type_definition, Field, ParameterDef, Port, PortDir, Range, Type, Variant,
+    Field, ParameterDef, Port, PortDir, Range, Type, Variant, extract_modules,
+    extract_modules_from_value, extract_parameter_defs, extract_parameter_defs_from_value,
+    extract_ports, extract_ports_from_value, parse_type_definition,
 };
 
 mod hierarchy;
-pub use hierarchy::{extract_hierarchy, extract_hierarchy_from_value, Instance};
+pub use hierarchy::{Instance, extract_hierarchy, extract_hierarchy_from_value};
 
 mod package;
-pub use package::{extract_packages, extract_packages_from_value, Package, Parameter};
+pub use package::{Package, Parameter, extract_packages, extract_packages_from_value};
 
 #[derive(Debug)]
 pub struct SlangConfig<'a> {

@@ -22,16 +22,25 @@ pub fn extract_hierarchy(
 
 pub fn extract_hierarchy_from_value(value: &Value) -> HashMap<String, Instance> {
     let mut top_level_instances = HashMap::new();
+    let symbols = AstSymbols::new(value);
 
     if let Some(members) = value
         .get("design")
         .and_then(|v| v.get("members").and_then(|v| v.as_array()))
     {
         for member in members {
+            let member = symbols.resolve(member);
             if let Some(kind) = member.get("kind") {
                 if kind == "Instance" {
-                    if let Some((mut inst, value)) = descend_into_instance(member, "".to_string()) {
-                        extract_hierarchy_from_value_helper(&mut inst, value, "".to_string());
+                    if let Some((mut inst, value)) =
+                        descend_into_instance(member, "".to_string(), &symbols)
+                    {
+                        extract_hierarchy_from_value_helper(
+                            &mut inst,
+                            value,
+                            "".to_string(),
+                            &symbols,
+                        );
                         top_level_instances.insert(inst.def_name.clone(), inst);
                     }
                 }
@@ -42,16 +51,27 @@ pub fn extract_hierarchy_from_value(value: &Value) -> HashMap<String, Instance> 
     top_level_instances
 }
 
-fn extract_hierarchy_from_value_helper(top: &mut Instance, value: &Value, hier_prefix: String) {
+fn extract_hierarchy_from_value_helper(
+    top: &mut Instance,
+    value: &Value,
+    hier_prefix: String,
+    symbols: &AstSymbols,
+) {
     let symbol_table = create_symbol_table(value);
     if let Some(members) = value.get("members").and_then(|v| v.as_array()) {
         for member in members {
+            let member = symbols.resolve(member);
             if let Some(kind) = member.get("kind") {
                 if kind == "Instance" {
                     if let Some((mut inst, value)) =
-                        descend_into_instance(member, hier_prefix.clone())
+                        descend_into_instance(member, hier_prefix.clone(), symbols)
                     {
-                        extract_hierarchy_from_value_helper(&mut inst, value, "".to_string());
+                        extract_hierarchy_from_value_helper(
+                            &mut inst,
+                            value,
+                            "".to_string(),
+                            symbols,
+                        );
                         top.contents.push(Rc::new(RefCell::new(inst)));
                     }
                 } else if kind == "UninstantiatedDef" {
@@ -71,7 +91,12 @@ fn extract_hierarchy_from_value_helper(top: &mut Instance, value: &Value, hier_p
                     if let Some((hier_prefix, value)) =
                         descend_into_generate_block(member, hier_prefix.clone(), &symbol_table)
                     {
-                        extract_hierarchy_from_value_helper(top, value, hier_prefix.clone());
+                        extract_hierarchy_from_value_helper(
+                            top,
+                            value,
+                            hier_prefix.clone(),
+                            symbols,
+                        );
                     }
                 } else if kind == "GenerateBlockArray" {
                     if let Some(elements) = descend_into_generate_block_array(
@@ -80,7 +105,12 @@ fn extract_hierarchy_from_value_helper(top: &mut Instance, value: &Value, hier_p
                         &symbol_table,
                     ) {
                         for (hier_prefix, element) in elements {
-                            extract_hierarchy_from_value_helper(top, element, hier_prefix.clone());
+                            extract_hierarchy_from_value_helper(
+                                top,
+                                element,
+                                hier_prefix.clone(),
+                                symbols,
+                            );
                         }
                     }
                 }
@@ -89,12 +119,16 @@ fn extract_hierarchy_from_value_helper(top: &mut Instance, value: &Value, hier_p
     }
 }
 
-fn descend_into_instance(value: &Value, hier_prefix: String) -> Option<(Instance, &Value)> {
+fn descend_into_instance<'a>(
+    value: &'a Value,
+    hier_prefix: String,
+    symbols: &AstSymbols<'a>,
+) -> Option<(Instance, &'a Value)> {
     if let Some(inst_name) = value.get("name").and_then(|v| v.as_str()) {
         if inst_name.is_empty() {
             return None;
         }
-        if let Some(body) = value.get("body") {
+        if let Some(body) = value.get("body").map(|body| symbols.resolve(body)) {
             if let Some(def_name) = body.get("name").and_then(|v| v.as_str()) {
                 if def_name.is_empty() {
                     return None;
@@ -113,6 +147,58 @@ fn descend_into_instance(value: &Value, hier_prefix: String) -> Option<(Instance
     }
 
     None
+}
+
+/// Resolves Slang AST links. Slang v10 and newer serialize a node only once and
+/// represent subsequent references as strings containing the node address and
+/// name (for example, `"123456 C"`). Older releases serialize those nodes
+/// inline, so accepting both forms keeps this crate compatible across versions.
+struct AstSymbols<'a> {
+    /// Every serialized AST object that can be the target of an address link.
+    by_address: HashMap<u64, &'a Value>,
+}
+
+impl<'a> AstSymbols<'a> {
+    /// Indexes the complete JSON document so links can cross AST scopes.
+    fn new(root: &'a Value) -> Self {
+        let mut by_address = HashMap::new();
+        Self::index(root, &mut by_address);
+        Self { by_address }
+    }
+
+    /// Recursively records each object with an `addr` field.
+    fn index(value: &'a Value, by_address: &mut HashMap<u64, &'a Value>) {
+        match value {
+            Value::Object(object) => {
+                if let Some(address) = object.get("addr").and_then(Value::as_u64) {
+                    by_address.insert(address, value);
+                }
+                for child in object.values() {
+                    Self::index(child, by_address);
+                }
+            }
+            Value::Array(array) => {
+                for child in array {
+                    Self::index(child, by_address);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Follows a v10+ string link to its serialized object.
+    ///
+    /// Inline objects from older Slang releases are returned unchanged. An
+    /// unknown or malformed link is also left untouched, allowing the caller's
+    /// existing shape checks to reject it naturally.
+    fn resolve(&self, value: &'a Value) -> &'a Value {
+        value
+            .as_str()
+            .and_then(|link| link.split_whitespace().next())
+            .and_then(|address| address.parse::<u64>().ok())
+            .and_then(|address| self.by_address.get(&address).copied())
+            .unwrap_or(value)
+    }
 }
 
 fn descend_into_generate_block<'a>(
@@ -195,4 +281,42 @@ fn get_default_genblk_name(index: usize, symbol_table: &HashSet<String>) -> Stri
         prefix = format!("{prefix}0");
     }
     format!("{prefix}{index}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn resolves_repeated_instance_body_links_from_slang_v11() {
+        let ast = json!({
+            "design": {
+                "members": [{
+                    "name": "top",
+                    "kind": "Instance",
+                    "body": {
+                        "name": "top",
+                        "kind": "InstanceBody",
+                        "addr": 1,
+                        "members": [
+                            {
+                                "name": "first",
+                                "kind": "Instance",
+                                "body": { "name": "child", "kind": "InstanceBody", "addr": 2 }
+                            },
+                            { "name": "second", "kind": "Instance", "body": "2 child" }
+                        ]
+                    }
+                }]
+            }
+        });
+
+        let hierarchy = extract_hierarchy_from_value(&ast);
+        let children = &hierarchy["top"].contents;
+        assert_eq!(children.len(), 2);
+        assert_eq!(children[0].borrow().inst_name, "first");
+        assert_eq!(children[1].borrow().inst_name, "second");
+        assert_eq!(children[1].borrow().def_name, "child");
+    }
 }
