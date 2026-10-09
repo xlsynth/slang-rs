@@ -2,12 +2,12 @@
 
 # adapted from https://github.com/xlsynth/xlsynth-crate/blob/main/.github/workflows/publish.yml
 
-name: Publish to crates.io
+name: Release slang-rs
 
 on:
   push:
     tags:
-      - 'v*' # This will trigger the workflow on version tags like v1.0.0, v0.1.0, etc.
+      - 'v*'
 
 jobs:
   publish:
@@ -22,14 +22,19 @@ jobs:
     - name: Check out code
       uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-    - name: Validate version matches
-      run: |
-        # GITHUB_REF will be something like "refs/tags/v0.0.57"
-        # We'll strip off the "refs/tags/" part, leaving "v0.0.57".
-        VERSION="${GITHUB_REF#refs/tags/}"
+    - name: Configure Cargo target
+      # Keep CMake's downloaded native sources outside the checkout.
+      shell: bash
+      run: echo "CARGO_TARGET_DIR=$RUNNER_TEMP/slang-rs-target" >> "$GITHUB_ENV"
 
-        # Now invoke the Python script, passing the version.
-        python check_version_is.py "$VERSION"
+    - name: Set up Python
+      uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+      with:
+        python-version: '3.12'
+
+    - name: Validate version
+      run: |
+        python check_version_is.py "$GITHUB_REF_NAME"
 
     - name: Set up Rust
       uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
@@ -53,14 +58,7 @@ jobs:
           ${{ runner.os }}-cargo-index-
 
     - name: Build and test
-      run: |
-        curl --fail --location --proto '=https' --tlsv1.2 -o "$RUNNER_TEMP/slang.tar.gz" \
-          "https://github.com/MikePopoloski/slang/releases/download/v11.0/slang-linux-x86_64.tar.gz"
-        echo "951a170e10e25e54c91565030acfdfc11c3226714ebf225a18ad4166a898d8a4  $RUNNER_TEMP/slang.tar.gz" | sha256sum -c -
-        tar -xzf "$RUNNER_TEMP/slang.tar.gz" -C "$RUNNER_TEMP"
-        chmod +x "$RUNNER_TEMP/slang"
-        export SLANG_PATH="$RUNNER_TEMP/slang"
-        cargo test --locked
+      run: cargo test --locked
 
     - name: Authenticate with crates.io
       id: auth
@@ -71,3 +69,65 @@ jobs:
         CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
       run: |
         cargo publish --locked
+
+  # Other CI jobs on matching platform(s) can use these bundles to skip compiling
+  # Slang and fmt. Only this job needs permission to create GitHub releases.
+  native-release:
+    needs: [publish]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+    - name: Set up Python
+      uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+      with:
+        python-version: '3.12'
+
+    - name: Set up Rust
+      uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+      with:
+        toolchain: 1.85.0
+
+    - name: Build the native bundle
+      env:
+        CC: gcc
+        CXX: g++
+      run: |
+        python3 tools/native.py build \
+          --build-dir "$RUNNER_TEMP/slang-native-build" \
+          --output "$RUNNER_TEMP/slang-native-stage"
+        python3 tools/native.py archive \
+          --from "$RUNNER_TEMP/slang-native-stage" \
+          --output "$RUNNER_TEMP/slang-native-ubuntu-24.04-x86_64-gnu.tar.gz"
+
+    - name: Verify the relocated archive with Cargo
+      env:
+        CC: gcc
+        CXX: g++
+        CARGO_TARGET_DIR: ${{ runner.temp }}/slang-native-consumer-target
+      run: |
+        cd "$RUNNER_TEMP"
+        sha256sum --check slang-native-ubuntu-24.04-x86_64-gnu.tar.gz.sha256
+        mkdir slang-native-extracted
+        tar -xzf slang-native-ubuntu-24.04-x86_64-gnu.tar.gz -C slang-native-extracted
+        cd "$GITHUB_WORKSPACE"
+        SLANG_RS_NATIVE_DIR="$RUNNER_TEMP/slang-native-extracted" \
+          cargo test --locked --test native_test \
+          native_queries_reuse_session_without_external_tools -- --exact
+
+    - name: Attach archive to the GitHub release
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+      run: |
+        archive="$RUNNER_TEMP/slang-native-ubuntu-24.04-x86_64-gnu.tar.gz"
+        if gh release view "$GITHUB_REF_NAME" --json tagName >/dev/null 2>&1; then
+          gh release upload "$GITHUB_REF_NAME" "$archive" "$archive.sha256"
+        else
+          gh release create "$GITHUB_REF_NAME" --verify-tag --notes-from-tag \
+            "$archive" "$archive.sha256"
+        fi

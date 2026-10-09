@@ -57,11 +57,7 @@ fn find_missing_spdx_files(root: &Path) -> Vec<PathBuf> {
     let mut missing_spdx_files = Vec::new();
     let mut dir_worklist: Vec<PathBuf> = vec![root.into()];
 
-    loop {
-        let dir = match dir_worklist.pop() {
-            Some(dir) => dir,
-            None => break,
-        };
+    while let Some(dir) = dir_worklist.pop() {
         for entry in fs::read_dir(dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
