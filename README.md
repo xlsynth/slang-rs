@@ -12,7 +12,7 @@ Add `slang-rs` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-slang-rs = "0.23"
+slang-rs = "0.24"
 ```
 
 Cargo builds Slang and the Rust bindings automatically, downloading and
@@ -36,7 +36,6 @@ use slang_rs::{Compilation, SlangConfig, Source};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = SlangConfig {
         sources: &[Source::text(
-            "top.sv",
             "module top(input logic [7:0] data); endmodule",
         )],
         ..Default::default()
@@ -67,7 +66,7 @@ use slang_rs::{Compilation, SlangConfig, Source};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = SlangConfig {
-        sources: &[Source::text("constants.sv", r#"
+        sources: &[Source::text(r#"
             package my_pkg;
                 localparam int COUNT = 42;
                 localparam bit [127:0] WIDE = 128'h1_0000_0000_0000_0000;
@@ -110,7 +109,7 @@ use slang_rs::{
 
 let config = SlangConfig {
     sources: &[
-        Source::text("settings.sv", "`define DATA_WIDTH 8\n"),
+        Source::text("`define DATA_WIDTH 8\n"),
         Source::file("rtl/top.sv"),
         Source::file("rtl/leaf.sv"),
     ],
@@ -129,8 +128,8 @@ let config = SlangConfig {
 };
 ```
 
-Sources can be file paths or patterns (`Source::file`) and named in-memory
-buffers (`Source::text`). Use `incdirs` for include directories and `tops` to
+Sources can be file paths or patterns (`Source::file`) and in-memory buffers
+(`Source::text(content)`). Use `incdirs` for include directories and `tops` to
 select top-level modules. Set macros with `defines` and override parameters
 with `parameters`.
 

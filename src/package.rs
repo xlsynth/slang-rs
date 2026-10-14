@@ -9,7 +9,7 @@ use crate::{ConstantValue, Error, Type};
 /// ```
 /// use slang_rs::{Compilation, SlangConfig, Source};
 /// let config = SlangConfig {
-///     sources: &[Source::text("constants.sv",
+///     sources: &[Source::text(
 ///         "package p; localparam int answer = 42; endpackage")],
 ///     ..Default::default()
 /// };

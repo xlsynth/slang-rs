@@ -7,9 +7,8 @@ mod tests {
 
     #[test]
     fn test_extract_ports() {
-        let verilog = Source::Text {
-            name: "verilog.sv",
-            text: "
+        let verilog = Source::text(
+            "
         `define M 8
         module foo #(
             parameter N=11,
@@ -35,7 +34,7 @@ mod tests {
             parameter P=13
         );
         endmodule",
-        };
+        );
 
         let cfg = SlangConfig {
             sources: &[verilog],
@@ -221,9 +220,8 @@ mod tests {
 
     #[test]
     fn test_union() {
-        let verilog = Source::Text {
-            name: "verilog.sv",
-            text: "
+        let verilog = Source::text(
+            "
         typedef union {
             logic [7:0] data;
             logic valid;
@@ -234,7 +232,7 @@ mod tests {
             input bus_t bus
         );
         endmodule",
-        };
+        );
 
         let cfg = SlangConfig {
             sources: &[verilog],
@@ -302,9 +300,8 @@ mod tests {
 
     #[test]
     fn test_struct() {
-        let verilog = Source::Text {
-            name: "verilog.sv",
-            text: "
+        let verilog = Source::text(
+            "
         typedef struct {
             logic [7:0] data;
             logic valid;
@@ -315,7 +312,7 @@ mod tests {
             output bus_t bus
         );
         endmodule",
-        };
+        );
 
         let cfg = SlangConfig {
             sources: &[verilog],
@@ -383,9 +380,8 @@ mod tests {
 
     #[test]
     fn test_struct_array() {
-        let verilog = Source::Text {
-            name: "verilog.sv",
-            text: "
+        let verilog = Source::text(
+            "
         typedef struct packed {
             logic [7:0] data;
         } bus_t;
@@ -394,7 +390,7 @@ mod tests {
             output bus_t [3:0] bus
         );
         endmodule",
-        };
+        );
 
         let cfg = SlangConfig {
             sources: &[verilog],
@@ -434,9 +430,8 @@ mod tests {
 
     #[test]
     fn test_enum_array() {
-        let verilog = Source::Text {
-            name: "verilog.sv",
-            text: "
+        let verilog = Source::text(
+            "
         typedef enum logic [1:0] {
             RED=0,
             GREEN=1,
@@ -447,7 +442,7 @@ mod tests {
             output color_t [3:0] color
         );
         endmodule",
-        };
+        );
 
         let cfg = SlangConfig {
             sources: &[verilog],
@@ -515,9 +510,8 @@ mod tests {
 
     #[test]
     fn test_package() {
-        let verilog = Source::Text {
-            name: "verilog.sv",
-            text: "
+        let verilog = Source::text(
+            "
         package mypack;
             typedef struct {
                 logic [7:0] data;
@@ -535,7 +529,7 @@ mod tests {
             output mypack::enum_t data
         );
         endmodule",
-        };
+        );
 
         let cfg = SlangConfig {
             sources: &[verilog],
@@ -643,9 +637,8 @@ mod tests {
 
     #[test]
     fn test_enum() {
-        let verilog = Source::Text {
-            name: "verilog.sv",
-            text: "
+        let verilog = Source::text(
+            "
         typedef enum logic [15:0] {
             A=1234,
             B=2345
@@ -656,7 +649,7 @@ mod tests {
             output enum_t data
         );
         endmodule",
-        };
+        );
 
         let cfg = SlangConfig {
             sources: &[verilog],
@@ -727,10 +720,7 @@ mod tests {
 
     #[test]
     fn test_informative_parse_error() {
-        let verilog = Source::Text {
-            name: "verilog.sv",
-            text: "module A;",
-        };
+        let verilog = Source::text("module A;");
 
         let cfg = SlangConfig {
             sources: &[verilog],
@@ -744,9 +734,8 @@ mod tests {
 
     #[test]
     fn test_width_fn() {
-        let verilog = Source::Text {
-            name: "verilog.sv",
-            text: "
+        let verilog = Source::text(
+            "
         typedef struct packed {
             logic [7:0] a; // width: 8
             logic [1:0][2:0] b; // width: 6
@@ -771,7 +760,7 @@ mod tests {
             input wire in0
         );
         endmodule",
-        };
+        );
 
         let cfg = SlangConfig {
             sources: &[verilog],
@@ -789,9 +778,8 @@ mod tests {
     fn test_module_extract() {
         // test verilog includes other kinds of definitions to make sure that the
         // library is only extracting module names
-        let verilog = Source::Text {
-            name: "verilog.sv",
-            text: "
+        let verilog = Source::text(
+            "
 package my_pack;
 endpackage
 
@@ -818,7 +806,7 @@ endmodule
 module D;
 endmodule
 ",
-        };
+        );
 
         let cfg = SlangConfig {
             sources: &[verilog],
@@ -833,25 +821,23 @@ endmodule
 
     #[test]
     fn test_timescale_option() {
-        let verilog_a = Source::Text {
-            name: "verilog_a.sv",
-            text: "
+        let verilog_a = Source::text(
+            "
 module A(
     input clk
 );
     B b();
 endmodule
 ",
-        };
+        );
 
-        let verilog_b = Source::Text {
-            name: "verilog_b.sv",
-            text: "
+        let verilog_b = Source::text(
+            "
 `timescale 1ns/1ps
 module B;
 endmodule
 ",
-        };
+        );
 
         let cfg = SlangConfig {
             sources: &[verilog_b, verilog_a],
@@ -888,9 +874,8 @@ endmodule
 
     #[test]
     fn test_protected() {
-        let verilog = Source::Text {
-            name: "verilog.sv",
-            text: "
+        let verilog = Source::text(
+            "
         module foo(
             input a
         );
@@ -898,7 +883,7 @@ endmodule
             asdf
             `endprotected
         endmodule",
-        };
+        );
 
         let cfg = SlangConfig {
             sources: &[verilog],
@@ -925,9 +910,8 @@ endmodule
 
     #[test]
     fn test_disabled_legacy_protect_returns_error() {
-        let verilog = Source::Text {
-            name: "verilog.sv",
-            text: "
+        let verilog = Source::text(
+            "
         module foo(
             input a
         );
@@ -935,7 +919,7 @@ endmodule
             asdf
             `endprotected
         endmodule",
-        };
+        );
 
         let cfg = SlangConfig {
             sources: &[verilog],
@@ -950,16 +934,15 @@ endmodule
 
     #[test]
     fn test_negative_indices() {
-        let verilog = Source::Text {
-            name: "verilog.sv",
-            text: "
+        let verilog = Source::text(
+            "
         module foo #(
             parameter N=1
         ) (
             input [N-1:0] a
         );
         endmodule",
-        };
+        );
 
         let cfg = SlangConfig {
             sources: &[verilog],
@@ -990,9 +973,8 @@ endmodule
 
     #[test]
     fn test_enum_conversion() {
-        let verilog = Source::Text {
-            name: "verilog.sv",
-            text: "
+        let verilog = Source::text(
+            "
         typedef enum logic [1:0] {
             A=0,
             B=1,
@@ -1005,7 +987,7 @@ endmodule
         );
             assign a = b;
         endmodule",
-        };
+        );
 
         let cfg = SlangConfig {
             sources: &[verilog],
@@ -1024,9 +1006,8 @@ endmodule
 
     #[test]
     fn test_extract_parameters() {
-        let verilog = Source::Text {
-            name: "verilog.sv",
-            text: "
+        let verilog = Source::text(
+            "
         module foo #(
             parameter int IntParam = 1,
             parameter int unsigned UnsignedParam = 2,
@@ -1038,7 +1019,7 @@ endmodule
             input logic [LongIntParam-1:0] c
         );
         endmodule",
-        };
+        );
 
         let cfg = SlangConfig {
             sources: &[verilog],
@@ -1099,9 +1080,8 @@ endmodule
 
     #[test]
     fn semantic_widths_distinguish_packed_and_unpacked_types() {
-        let source = Source::Text {
-            name: "source.sv",
-            text: "typedef struct packed { logic [7:0] data; logic valid; } packed_s;
+        let source = Source::text(
+            "typedef struct packed { logic [7:0] data; logic valid; } packed_s;
              typedef struct { logic [7:0] data; logic valid; } unpacked_s;
              typedef union packed { logic [7:0] data; logic [1:0][3:0] lanes; } packed_u;
              typedef union { logic [7:0] data; logic valid; } unpacked_u;
@@ -1116,7 +1096,7 @@ endmodule
                input struct packed { logic [4:0] field; } anonymous_structure,
                input enum logic [1:0] { Idle, Ready } anonymous_enum
              ); endmodule",
-        };
+        );
         let ports = Compilation::new(&SlangConfig {
             sources: &[source],
             ..Default::default()

@@ -579,6 +579,9 @@ std::unique_ptr<NativeCompilation> create_compilation(NativeConfig input) {
                 break;
             }
             case NativeSourceKind::Text:
+                loader.addBuffer(state.sourceManager.assignText(view(source.text)));
+                break;
+            case NativeSourceKind::NamedText:
                 loader.addBuffer(state.sourceManager.assignText(view(source.name), view(source.text)));
                 break;
             default:

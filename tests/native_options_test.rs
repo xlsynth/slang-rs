@@ -7,20 +7,18 @@ use slang_rs::{
 };
 use std::num::NonZeroU32;
 
-const MULTIPLE_DRIVERS: Source<'static> = Source::Text {
-    name: "drivers.sv",
-    text: "module top(input logic a, b, output logic q);
+const MULTIPLE_DRIVERS: Source<'static> = Source::text(
+    "module top(input logic a, b, output logic q);
              always_comb q = a;
              always_comb q = b;
            endmodule",
-};
+);
 
-const REDEFINED_MACRO: Source<'static> = Source::Text {
-    name: "macros.sv",
-    text: "`define WIDTH 1
+const REDEFINED_MACRO: Source<'static> = Source::text(
+    "`define WIDTH 1
            `define WIDTH 2
            module top(input [`WIDTH-1:0] data); endmodule",
-};
+);
 
 #[test]
 fn analysis_diagnostics_respect_structured_warning_policy() {
@@ -80,10 +78,10 @@ fn analysis_diagnostics_respect_structured_warning_policy() {
 
 #[test]
 fn warning_defaults_all_none_and_explicit_overrides_are_distinct() {
-    let sources = [Source::Text {
-        name: "unused.sv",
-        text: "module top; logic spare; endmodule",
-    }];
+    let sources = [Source::named_text(
+        "unused.sv",
+        "module top; logic spare; endmodule",
+    )];
     let default = Compilation::new(&SlangConfig {
         sources: &sources,
         ..Default::default()
@@ -200,14 +198,13 @@ fn explicit_severity_overrides_global_promotion_and_later_overrides_win() {
 
 #[test]
 fn protected_suppression_survives_global_warning_errors_but_can_be_overridden() {
-    let sources = [Source::Text {
-        name: "protected.sv",
-        text: "module top;
+    let sources = [Source::text(
+        "module top;
                  `protected
                  encrypted_placeholder
                  `endprotected
                endmodule\n",
-    }];
+    )];
     Compilation::new(&SlangConfig {
         sources: &sources,
         diagnostics: DiagnosticOptions {
@@ -248,10 +245,7 @@ fn protected_suppression_survives_global_warning_errors_but_can_be_overridden() 
 
 #[test]
 fn language_version_controls_keywords_and_new_syntax() {
-    let verilog = [Source::Text {
-        name: "keywords.v",
-        text: "module top(input wire logic); endmodule",
-    }];
+    let verilog = [Source::text("module top(input wire logic); endmodule")];
     let compilation = Compilation::new(&SlangConfig {
         sources: &verilog,
         language_version: LanguageVersion::Verilog2005,
@@ -267,10 +261,9 @@ fn language_version_controls_keywords_and_new_syntax() {
         .is_err()
     );
 
-    let systemverilog = [Source::Text {
-        name: "strings.sv",
-        text: "package p; localparam string MESSAGE = \"\"\"hello\"\"\"; endpackage",
-    }];
+    let systemverilog = [Source::text(
+        "package p; localparam string MESSAGE = \"\"\"hello\"\"\"; endpackage",
+    )];
     let error = Compilation::new(&SlangConfig {
         sources: &systemverilog,
         language_version: LanguageVersion::SystemVerilog2017,
@@ -302,15 +295,14 @@ fn configuration_strings_are_owned_and_translate_markers_are_structured() {
         let common = String::from("custom");
         let start = String::from("omit_begin");
         let end = String::from("omit_end");
-        let sources = [Source::Text {
-            name: "translate.sv",
-            text: "module selected_top(input logic [6:0] data);
+        let sources = [Source::text(
+            "module selected_top(input logic [6:0] data);
                    // custom omit_begin
                    this is not valid SystemVerilog
                    // custom omit_end
                    endmodule
                    module other_top; endmodule",
-        }];
+        )];
         Compilation::new(&SlangConfig {
             sources: &sources,
             tops: &[&top],
@@ -331,10 +323,7 @@ fn configuration_strings_are_owned_and_translate_markers_are_structured() {
 
 #[test]
 fn invalid_structured_settings_return_contextual_errors() {
-    let sources = [Source::Text {
-        name: "top.sv",
-        text: "module top; endmodule",
-    }];
+    let sources = [Source::text("module top; endmodule")];
     let error = Compilation::new(&SlangConfig {
         sources: &sources,
         diagnostics: DiagnosticOptions {
@@ -389,12 +378,11 @@ fn missing_source_returns_a_contextual_error() {
 
 #[test]
 fn lint_only_does_not_automatically_instantiate_modules() {
-    let sources = [Source::Text {
-        name: "recursive.sv",
-        text: "module recursive(input logic [3:0] data);
+    let sources = [Source::text(
+        "module recursive(input logic [3:0] data);
                  recursive child(.data(data));
                endmodule\n",
-    }];
+    )];
     let mut config = SlangConfig {
         sources: &sources,
         tops: &["recursive"],
@@ -424,11 +412,10 @@ fn lint_only_does_not_automatically_instantiate_modules() {
 
 #[test]
 fn named_warning_overrides_accept_native_diagnostics_and_groups() {
-    let sources = [Source::Text {
-        name: "connections.sv",
-        text: "module leaf(input wire a, output wire b, inout wire c); endmodule
+    let sources = [Source::text(
+        "module leaf(input wire a, output wire b, inout wire c); endmodule
                module top; leaf child(); endmodule\n",
-    }];
+    )];
     let compilation = Compilation::new(&SlangConfig {
         sources: &sources,
         tops: &["top"],
@@ -474,14 +461,13 @@ fn named_warning_overrides_accept_native_diagnostics_and_groups() {
 
 #[test]
 fn use_before_declaration_can_be_enabled_for_implicit_port_connections() {
-    let sources = [Source::Text {
-        name: "declarations.sv",
-        text: "module leaf(input logic data); endmodule
+    let sources = [Source::text(
+        "module leaf(input logic data); endmodule
                module top;
                  leaf child(.data);
                  logic data;
                endmodule\n",
-    }];
+    )];
     let mut config = SlangConfig {
         sources: &sources,
         tops: &["top"],

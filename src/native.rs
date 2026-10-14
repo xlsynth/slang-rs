@@ -19,6 +19,7 @@ mod ffi {
     enum NativeSourceKind {
         File,
         Text,
+        NamedText,
     }
     struct NativeSource {
         kind: NativeSourceKind,
@@ -394,8 +395,15 @@ impl From<&SlangConfig<'_>> for ffi::NativeConfig {
                         name: (*path).to_owned(),
                         text: String::new(),
                     },
-                    Source::Text { name, text } => ffi::NativeSource {
+                    // TODO: Consider borrowing source text across the bridge
+                    // instead of cloning it here; Slang's assignText copies it again.
+                    Source::Text(text) => ffi::NativeSource {
                         kind: ffi::NativeSourceKind::Text,
+                        name: String::new(),
+                        text: (*text).to_owned(),
+                    },
+                    Source::NamedText { name, text } => ffi::NativeSource {
+                        kind: ffi::NativeSourceKind::NamedText,
                         name: (*name).to_owned(),
                         text: (*text).to_owned(),
                     },

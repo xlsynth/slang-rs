@@ -3,16 +3,19 @@
 use std::fmt;
 use std::num::NonZeroU32;
 
-/// A source file or named source text held in memory.
+/// A source file or source text held in memory.
 ///
 /// Inputs are processed in the order supplied in [`SlangConfig::sources`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Source<'a> {
     /// A file path or pattern, resolved and loaded by Slang.
     File(&'a str),
-    /// Source text to parse as a compilation input. The name is used for
+    /// Source text to parse with a unique anonymous name assigned by Slang.
+    Text(&'a str),
+    /// Named source text to parse as a compilation input. The name is used for
     /// diagnostics and relative include resolution; no file is written there.
-    Text { name: &'a str, text: &'a str },
+    /// An empty name lets Slang assign a unique anonymous buffer name.
+    NamedText { name: &'a str, text: &'a str },
 }
 
 impl<'a> Source<'a> {
@@ -21,9 +24,16 @@ impl<'a> Source<'a> {
         Self::File(path)
     }
 
-    /// Supply named source text without creating a temporary file.
-    pub const fn text(name: &'a str, text: &'a str) -> Self {
-        Self::Text { name, text }
+    /// Supply source text without creating a temporary file. Slang assigns a
+    /// unique anonymous name for diagnostics.
+    pub const fn text(text: &'a str) -> Self {
+        Self::Text(text)
+    }
+
+    /// Supply source text with a name for diagnostics and relative includes,
+    /// without creating a temporary file.
+    pub const fn named_text(name: &'a str, text: &'a str) -> Self {
+        Self::NamedText { name, text }
     }
 }
 
@@ -148,7 +158,7 @@ impl Default for DiagnosticOptions<'_> {
 /// Inputs and settings for an in-process Slang compilation.
 #[derive(Clone, Copy, Debug)]
 pub struct SlangConfig<'a> {
-    /// File paths or patterns and named text buffers, in compilation order.
+    /// File paths or patterns and text buffers, in compilation order.
     /// File patterns expand at their position in this list. Extension exclusions
     /// apply to file paths or patterns before glob expansion, not to text buffers.
     pub sources: &'a [Source<'a>],

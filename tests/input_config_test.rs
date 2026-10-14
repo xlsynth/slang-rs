@@ -11,10 +11,7 @@ fn source_text_is_owned_without_creating_a_file() {
         let name = path.to_str().unwrap().to_owned();
         let text = String::from("module top(input logic [12:0] data); endmodule");
         Compilation::new(&SlangConfig {
-            sources: &[Source::Text {
-                name: &name,
-                text: &text,
-            }],
+            sources: &[Source::named_text(&name, &text)],
             ..Default::default()
         })
         .unwrap()
@@ -41,14 +38,14 @@ fn source_text_and_files_share_a_compilation_and_resolve_local_includes() {
     let compilation = Compilation::new(&SlangConfig {
         sources: &[
             Source::file(file.to_str().unwrap()),
-            Source::Text {
-                name: virtual_path.to_str().unwrap(),
-                text: "`include \"local.svh\"
+            Source::named_text(
+                virtual_path.to_str().unwrap(),
+                "`include \"local.svh\"
                    `include \"extra.svh\"
                    module top(input [`LOCAL_WIDTH + `EXTRA_WIDTH - 1:0] data);
                      leaf child();
                    endmodule",
-            },
+            ),
         ],
         incdirs: &[include_dir.to_str().unwrap()],
         tops: &["top"],
@@ -117,10 +114,7 @@ fn source_text_errors_keep_the_virtual_filename_and_source_line() {
         let name = String::from("--virtual broken source.sv");
         let text = String::from("module broken(input logic data;\nendmodule");
         Compilation::new(&SlangConfig {
-            sources: &[Source::Text {
-                name: &name,
-                text: &text,
-            }],
+            sources: &[Source::named_text(&name, &text)],
             ..Default::default()
         })
         .expect_err("invalid in-memory source should return diagnostics")
@@ -143,10 +137,7 @@ fn invalid_explicit_include_directory_returns_a_structured_error() {
     let directory = tempfile::tempdir().unwrap();
     let missing = directory.path().join("missing include directory");
     let error = Compilation::new(&SlangConfig {
-        sources: &[Source::Text {
-            name: "top.sv",
-            text: "module top; endmodule",
-        }],
+        sources: &[Source::text("module top; endmodule")],
         incdirs: &[missing.to_str().unwrap()],
         ..Default::default()
     })
@@ -218,7 +209,7 @@ fn excluded_extensions_filter_configured_sources_before_lookup() {
         sources: &[
             Source::file(source.to_str().unwrap()),
             Source::file(excluded.to_str().unwrap()),
-            Source::text("memory.skip", "module memory_leaf; endmodule"),
+            Source::named_text("memory.skip", "module memory_leaf; endmodule"),
             Source::file(missing.to_str().unwrap()),
             Source::file(pattern.to_str().unwrap()),
         ],
@@ -250,12 +241,9 @@ fn single_unit_preserves_interleaved_text_and_file_order() {
 
     let compilation = Compilation::new(&SlangConfig {
         sources: &[
-            Source::text("definitions.sv", "`define INPUT_WIDTH 3\n"),
+            Source::text("`define INPUT_WIDTH 3\n"),
             Source::file(configured.to_str().unwrap()),
-            Source::text(
-                "buffer.sv",
-                "module buffer_top(input [`INPUT_WIDTH-1:0] data); endmodule",
-            ),
+            Source::text("module buffer_top(input [`INPUT_WIDTH-1:0] data); endmodule"),
         ],
         single_unit: true,
         ..Default::default()
@@ -274,13 +262,12 @@ fn libraries_can_inherit_macros_from_the_shared_compilation_unit() {
         "module leaf(input [`DATA_WIDTH-1:0] data); endmodule",
     )
     .unwrap();
-    let sources = [Source::Text {
-        name: "top.sv",
-        text: "`define DATA_WIDTH 5
+    let sources = [Source::text(
+        "`define DATA_WIDTH 5
                module top(input [`DATA_WIDTH-1:0] data);
                  leaf child(.data(data));
                endmodule",
-    }];
+    )];
     let libraries = [library.to_str().unwrap()];
     let mut config = SlangConfig {
         sources: &sources,
