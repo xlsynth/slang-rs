@@ -74,7 +74,7 @@ slang-rs = { path = ".." }
 
 CONSUMER_SOURCE = '''// SPDX-License-Identifier: Apache-2.0
 pub fn parse(source: &str) -> usize {
-    let source = slang_rs::Source::Text { name: "top.sv", text: source };
+    let source = slang_rs::Source::text(source);
     let config = slang_rs::SlangConfig {
         sources: &[source],
         ..Default::default()

@@ -21,10 +21,7 @@ mod tests {
             ";
 
         let cfg = SlangConfig {
-            sources: &[Source::Text {
-                name: "design.sv",
-                text: verilog,
-            }],
+            sources: &[Source::text(verilog)],
             ..Default::default()
         };
 
@@ -128,10 +125,7 @@ endmodule
             ";
 
         let cfg = SlangConfig {
-            sources: &[Source::Text {
-                name: "design.sv",
-                text: verilog,
-            }],
+            sources: &[Source::text(verilog)],
             ..Default::default()
         };
 
@@ -199,10 +193,7 @@ endmodule
             ";
 
         let cfg = SlangConfig {
-            sources: &[Source::Text {
-                name: "design.sv",
-                text: verilog,
-            }],
+            sources: &[Source::text(verilog)],
             ..Default::default()
         };
 
@@ -231,10 +222,7 @@ endmodule
             ";
 
         let cfg = SlangConfig {
-            sources: &[Source::Text {
-                name: "design.sv",
-                text: verilog,
-            }],
+            sources: &[Source::text(verilog)],
             ..Default::default()
         };
 
@@ -298,10 +286,7 @@ endmodule
                 ",
             );
             let compilation = Compilation::new(&SlangConfig {
-                sources: &[Source::Text {
-                    name: "escaped.sv",
-                    text: &source,
-                }],
+                sources: &[Source::text(&source)],
                 tops: &["top"],
                 ..Default::default()
             })
@@ -353,9 +338,8 @@ endmodule
     #[test]
     fn native_paths_preserve_multidimensional_instance_array_indices() {
         let hierarchy = Compilation::new(&SlangConfig {
-            sources: &[Source::Text {
-                name: "instance_arrays.sv",
-                text: "
+            sources: &[Source::text(
+                "
                     module leaf;
                     endmodule
                     module branch;
@@ -367,7 +351,7 @@ endmodule
                         leaf descending[-1:-2]();
                     endmodule
                 ",
-            }],
+            )],
             tops: &["top"],
             ..Default::default()
         })

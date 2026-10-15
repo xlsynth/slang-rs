@@ -37,10 +37,7 @@ fn native_queries_reuse_session_without_external_tools() {
            child inst();
          endmodule";
     let compilation = Compilation::new(&SlangConfig {
-        sources: &[Source::Text {
-            name: "session.sv",
-            text: source,
-        }],
+        sources: &[Source::text(source)],
         tops: &["top"],
         ..Default::default()
     })
@@ -84,10 +81,7 @@ fn query_results_outlive_sources_and_compilation() {
              endmodule",
         );
         let compilation = Compilation::new(&SlangConfig {
-            sources: &[Source::Text {
-                name: "owned.sv",
-                text: &source,
-            }],
+            sources: &[Source::text(&source)],
             tops: &["top"],
             ..Default::default()
         })
@@ -127,10 +121,10 @@ fn query_results_outlive_sources_and_compilation() {
 #[test]
 fn malformed_source_returns_a_contextual_error() {
     let error = Compilation::new(&SlangConfig {
-        sources: &[Source::Text {
-            name: "broken.sv",
-            text: "module broken(input logic a;\nendmodule\n",
-        }],
+        sources: &[Source::named_text(
+            "broken.sv",
+            "module broken(input logic a;\nendmodule\n",
+        )],
         ..Default::default()
     })
     .expect_err("malformed source should return an error, not an incomplete compilation");
@@ -257,10 +251,7 @@ fn independent_compilations_can_run_concurrently() {
                 let source = format!("module top(input [{}:0] a); endmodule", width - 1);
                 barrier.wait();
                 let compilation = Compilation::new(&SlangConfig {
-                    sources: &[Source::Text {
-                        name: "thread.sv",
-                        text: &source,
-                    }],
+                    sources: &[Source::text(&source)],
                     ..Default::default()
                 })
                 .unwrap();
@@ -282,10 +273,7 @@ fn unsupported_ports_and_parameters_can_be_skipped_independently() {
          module top #(parameter int WIDTH = 8, parameter string LABEL = \"top\")
            (input logic clk, bus link); endmodule";
     let config = SlangConfig {
-        sources: &[Source::Text {
-            name: "interface.sv",
-            text: source,
-        }],
+        sources: &[Source::text(source)],
         tops: &["top"],
         allow_toplevel_interface_ports: true,
         ..Default::default()
@@ -328,10 +316,7 @@ fn unsupported_ports_and_parameters_can_be_skipped_independently() {
 fn anonymous_semantic_types_do_not_get_synthetic_names() {
     let source = "module top(input struct packed {logic [2:0] value;} data); endmodule";
     let compilation = Compilation::new(&SlangConfig {
-        sources: &[Source::Text {
-            name: "anonymous.sv",
-            text: source,
-        }],
+        sources: &[Source::text(source)],
         ..Default::default()
     })
     .unwrap();
@@ -351,7 +336,6 @@ fn anonymous_semantic_types_do_not_get_synthetic_names() {
 fn ports_support_name_lookup_and_iteration_in_port_list_order() {
     let compilation = Compilation::new(&SlangConfig {
         sources: &[Source::text(
-            "ordered.sv",
             "module top(zebra, alpha, middle);
                input alpha;
                output [3:0] middle;
@@ -389,7 +373,6 @@ fn ports_support_name_lookup_and_iteration_in_port_list_order() {
 fn unnamed_ports_keep_their_positions() {
     let compilation = Compilation::new(&SlangConfig {
         sources: &[Source::text(
-            "unnamed.sv",
             "module top(bus[3:2], bus[0], clk);
                input [3:0] bus;
                input clk;

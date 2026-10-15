@@ -22,9 +22,8 @@ mod tests {
 
     #[test]
     fn test_extract_packages() {
-        let verilog = Source::Text {
-            name: "verilog.sv",
-            text: "
+        let verilog = Source::text(
+            "
             package pkg_a;
               localparam int a=22;
             endpackage
@@ -34,7 +33,7 @@ mod tests {
               typedef logic [33:22] my_t;
             endpackage
             ",
-        };
+        );
 
         let cfg = SlangConfig {
             sources: &[verilog],
@@ -91,13 +90,12 @@ mod tests {
 
     #[test]
     fn test_extract_packages_error() {
-        let verilog = Source::Text {
-            name: "verilog.sv",
-            text: "
+        let verilog = Source::text(
+            "
             package A
             endpackage
             ",
-        };
+        );
 
         let cfg = SlangConfig {
             sources: &[verilog],
@@ -111,9 +109,8 @@ mod tests {
 
     #[test]
     fn test_extract_type_alias() {
-        let verilog = Source::Text {
-            name: "verilog.sv",
-            text: "
+        let verilog = Source::text(
+            "
             package my_pkg;
               typedef struct packed {
                 logic [2:0] a;
@@ -128,7 +125,7 @@ mod tests {
               typedef my_struct_t [3:0] my_array_t;
             endpackage
             ",
-        };
+        );
 
         let cfg = SlangConfig {
             sources: &[verilog],
@@ -167,9 +164,8 @@ mod tests {
 
     #[test]
     fn package_types_resolve_aliases_ranges_and_composite_members() {
-        let source = Source::Text {
-            name: "source.sv",
-            text: "package base;
+        let source = Source::text(
+            "package base;
                localparam int WIDTH = 4, COUNT = 2, BASE = -2;
                typedef logic signed [BASE:BASE+WIDTH-1] lane_t;
              endpackage
@@ -193,7 +189,7 @@ mod tests {
                  Positive = 80'sd1099511627776
                } wide_enum_t;
              endpackage",
-        };
+        );
         let packages = Compilation::new(&SlangConfig {
             sources: &[source],
             ..Default::default()
@@ -312,9 +308,8 @@ mod tests {
     #[test]
     fn native_types_preserve_primitive_kinds_dimensions_and_enum_bases() {
         let packages = Compilation::new(&SlangConfig {
-            sources: &[Source::Text {
-                name: "native_types.sv",
-                text: "package primitives;
+            sources: &[Source::text(
+                "package primitives;
                   typedef bit bit_t;
                   typedef logic logic_t;
                   typedef reg reg_t;
@@ -334,7 +329,7 @@ mod tests {
                   typedef enum { DefaultA, DefaultB } default_enum_t;
                   typedef enum bit signed [3:0] { Negative = -1, Zero = 0 } bit_enum_t;
                 endpackage",
-            }],
+            )],
             ..Default::default()
         })
         .unwrap()
@@ -456,15 +451,15 @@ mod tests {
 
     #[test]
     fn unsupported_package_types_do_not_hide_supported_types_or_constants() {
-        let source = Source::Text {
-            name: "package_types.sv",
-            text: "package mixed;
+        let source = Source::named_text(
+            "package_types.sv",
+            "package mixed;
                localparam int VALUE = 17;
                typedef logic [5:0] supported_t;
                typedef string text_t;
                typedef int samples_t[];
              endpackage",
-        };
+        );
         let packages = Compilation::new(&SlangConfig {
             sources: &[source],
             ..Default::default()
@@ -495,16 +490,15 @@ mod tests {
     }
     #[test]
     fn native_constants_preserve_integer_width_sign_and_four_state_bits() {
-        let source = Source::Text {
-            name: "source.sv",
-            text: r"package constants;
+        let source = Source::text(
+            r"package constants;
                 localparam logic signed [4:0] SMALL_NEGATIVE = -5'sd3;
                 localparam logic signed [79:0] SIGNED_WIDE = -80'sd18446744073709551617;
                 localparam logic [79:0] UNSIGNED_WIDE = 80'h8000_0000_0000_0000_0001;
                 localparam logic [69:0] FOUR_STATE = {4'b10xz, 62'b0, 4'bzx10};
                 typedef enum logic [3:0] { Unknown = 4'bx1z0 } four_state_t;
               endpackage",
-        };
+        );
         let packages = Compilation::new(&SlangConfig {
             sources: &[source],
             ..Default::default()
@@ -578,14 +572,13 @@ mod tests {
 
     #[test]
     fn native_constants_preserve_real_values_and_string_bytes() {
-        let source = Source::Text {
-            name: "source.sv",
-            text: r#"package constants;
+        let source = Source::text(
+            r#"package constants;
                  localparam real DOUBLE = -3.25;
                  localparam shortreal SINGLE = 1.5;
                  localparam string TEXT = "A\377\200Z";
                endpackage"#,
-        };
+        );
         let packages = Compilation::new(&SlangConfig {
             sources: &[source],
             ..Default::default()
@@ -605,9 +598,8 @@ mod tests {
 
     #[test]
     fn native_constants_preserve_nested_arrays_queues_maps_and_unions() {
-        let source = Source::Text {
-            name: "source.sv",
-            text: r"package constants;
+        let source = Source::text(
+            r"package constants;
                 localparam int MATRIX [2][2] = '{'{1, 2}, '{3, 4}};
                 localparam int ITEMS [$:3] = '{7, 8};
                 localparam int LOOKUP [int] = '{7:70, 3:30, default:99};
@@ -619,7 +611,7 @@ mod tests {
                 endfunction
                 localparam payload_t PAYLOAD = make_payload();
               endpackage",
-        };
+        );
         let packages = Compilation::new(&SlangConfig {
             sources: &[source],
             ..Default::default()

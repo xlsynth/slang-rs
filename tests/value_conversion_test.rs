@@ -198,7 +198,7 @@ fn native_package_parameters_offer_checked_conversions_directly() {
       localparam string TEXT = "22";
     endpackage"#;
     let packages = Compilation::new(&SlangConfig {
-        sources: &[Source::text("numeric.sv", source)],
+        sources: &[Source::text(source)],
         ..Default::default()
     })
     .unwrap()
