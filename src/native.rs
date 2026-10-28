@@ -239,6 +239,7 @@ mod ffi {
     struct NativePackage {
         name: String,
         values: Vec<NativePackageValue>,
+        enumerators: Vec<NativeVariant>,
         types: Vec<NativePackageType>,
     }
     struct PackageSnapshot {
@@ -727,7 +728,7 @@ impl Compilation {
         Ok(roots)
     }
 
-    /// Package value parameters and resolved typedefs.
+    /// Package value parameters, enum constants, and resolved typedefs.
     ///
     /// Constants are evaluated [`ConstantValue`] snapshots. Typedefs are
     /// resolved [`Type`] values in [`Package::types`], with an individual error
@@ -774,6 +775,11 @@ impl Compilation {
                     package.name.clone(),
                     Package {
                         name: package.name,
+                        enumerators: package
+                            .enumerators
+                            .into_iter()
+                            .map(|v| (v.name, convert_integer(&v.value)))
+                            .collect(),
                         parameters,
                         types,
                     },

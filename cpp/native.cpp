@@ -7,6 +7,7 @@
 #include "slang/ast/symbols/BlockSymbols.h"
 #include "slang/ast/symbols/CompilationUnitSymbols.h"
 #include "slang/ast/symbols/InstanceSymbols.h"
+#include "slang/ast/symbols/MemberSymbols.h"
 #include "slang/ast/symbols/ParameterSymbols.h"
 #include "slang/ast/symbols/PortSymbols.h"
 #include "slang/ast/symbols/VariableSymbols.h"
@@ -705,6 +706,14 @@ PackageSnapshot compilation_packages(const NativeCompilation& owner) {
                 const auto& value = member.as<ParameterSymbol>().getValue();
                 output.values.push_back(NativePackageValue{rustString(member.name),
                     appendValue(value, snapshot.values)});
+            }
+            else if (member.kind == SymbolKind::TransparentMember) {
+                const auto& wrapped = member.as<TransparentMemberSymbol>().wrapped;
+                if (wrapped.kind == SymbolKind::EnumValue) {
+                    const auto& value = wrapped.as<EnumValueSymbol>().getValue();
+                    output.enumerators.push_back(NativeVariant{rustString(member.name),
+                                                               snapshotInteger(value.integer())});
+                }
             }
             else if (member.kind == SymbolKind::TypeAlias) {
                 NativePackageType type{};
