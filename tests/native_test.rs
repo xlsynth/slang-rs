@@ -67,6 +67,52 @@ fn native_queries_reuse_session_without_external_tools() {
 }
 
 #[test]
+fn selective_queries_snapshot_only_the_named_declaration() {
+    let compilation = Compilation::new(&SlangConfig {
+        sources: &[Source::text(
+            "package first; localparam int W = 4; endpackage
+             package second; typedef logic [4:0] word_t; endpackage
+             interface bus; logic x; endinterface
+             module bad(bus b); endmodule
+             module child; endmodule
+             module good(input logic [first::W-1:0] a); child c(); endmodule",
+        )],
+        allow_toplevel_interface_ports: true,
+        ..Default::default()
+    })
+    .unwrap();
+    let mut tops = compilation.top_names().unwrap();
+    tops.sort();
+    assert_eq!(tops, ["bad", "good"]);
+    assert!(compilation.ports().is_err());
+    assert_eq!(
+        compilation.ports_for("good").unwrap().unwrap()[0]
+            .ty
+            .width()
+            .unwrap(),
+        4
+    );
+    assert!(compilation.ports_for("child").unwrap().is_none());
+    assert_eq!(
+        compilation.hierarchy_for("good").unwrap().unwrap(),
+        compilation.hierarchy().unwrap()["good"]
+    );
+    let mut names = compilation.package_names().unwrap();
+    names.sort();
+    assert_eq!(names, ["first", "second"]);
+    let packages = compilation.packages().unwrap();
+    for name in names {
+        assert_eq!(
+            compilation.package(&name).unwrap().as_ref(),
+            packages.get(&name)
+        );
+    }
+    for name in ["missing", "std", ""] {
+        assert!(compilation.package(name).unwrap().is_none());
+    }
+}
+
+#[test]
 fn query_results_outlive_sources_and_compilation() {
     let (ports, parameters, modules, packages, hierarchy) = {
         let source = String::from(
