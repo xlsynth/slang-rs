@@ -260,10 +260,19 @@ mod ffi {
             compilation: &NativeCompilation,
             parameters: bool,
             skip_unsupported: bool,
+            top: &str,
         ) -> Result<InterfaceSnapshot>;
         fn compilation_modules(compilation: &NativeCompilation) -> Result<Vec<String>>;
-        fn compilation_hierarchy(compilation: &NativeCompilation) -> Result<Vec<HierarchyNode>>;
-        fn compilation_packages(compilation: &NativeCompilation) -> Result<PackageSnapshot>;
+        fn compilation_top_names(compilation: &NativeCompilation) -> Result<Vec<String>>;
+        fn compilation_hierarchy(
+            compilation: &NativeCompilation,
+            top: &str,
+        ) -> Result<Vec<HierarchyNode>>;
+        fn compilation_package_names(compilation: &NativeCompilation) -> Result<Vec<String>>;
+        fn compilation_packages(
+            compilation: &NativeCompilation,
+            name: &str,
+        ) -> Result<PackageSnapshot>;
     }
 }
 
@@ -602,7 +611,19 @@ impl Compilation {
     /// [`SlangConfig::skip_unsupported_ports`] is enabled.
     /// Skipping ports removes their entries and shifts subsequent indices.
     pub fn ports(&self) -> Result<HashMap<String, PortList>, Error> {
-        let snapshot = self.interfaces(false, self.skip_unsupported_ports)?;
+        self.selected_ports("")
+    }
+
+    /// Ports on one elaborated top, without inspecting other tops' ports.
+    pub fn ports_for(&self, top: &str) -> Result<Option<PortList>, Error> {
+        if top.is_empty() {
+            return Ok(None);
+        }
+        Ok(self.selected_ports(top)?.remove(top))
+    }
+
+    fn selected_ports(&self, top: &str) -> Result<HashMap<String, PortList>, Error> {
+        let snapshot = self.interfaces(false, self.skip_unsupported_ports, top)?;
         let mut modules = HashMap::new();
         for module in snapshot.modules {
             let mut ports = Vec::new();
@@ -631,7 +652,7 @@ impl Compilation {
     /// Values and type parameters are not included. Unsupported types return
     /// an error unless [`SlangConfig::skip_unsupported_parameters`] is enabled.
     pub fn parameters(&self) -> Result<HashMap<String, Vec<Parameter>>, Error> {
-        let snapshot = self.interfaces(true, self.skip_unsupported_parameters)?;
+        let snapshot = self.interfaces(true, self.skip_unsupported_parameters, "")?;
         let mut modules = HashMap::new();
         for module in snapshot.modules {
             let parameters = module
@@ -655,8 +676,10 @@ impl Compilation {
         &self,
         parameters: bool,
         skip_unsupported: bool,
+        top: &str,
     ) -> Result<ffi::InterfaceSnapshot, Error> {
-        let snapshot = ffi::compilation_interfaces(self.inner(), parameters, skip_unsupported)?;
+        let snapshot =
+            ffi::compilation_interfaces(self.inner(), parameters, skip_unsupported, top)?;
         if !snapshot.diagnostics.is_empty() {
             return Err(Error {
                 message: "Unsupported SystemVerilog interface".into(),
@@ -676,10 +699,27 @@ impl Compilation {
         Ok(ffi::compilation_modules(self.inner())?)
     }
 
+    /// Names of elaborated top instances, the keys used by the port and hierarchy queries.
+    pub fn top_names(&self) -> Result<Vec<String>, Error> {
+        Ok(ffi::compilation_top_names(self.inner())?)
+    }
+
     /// Elaborated hierarchy, including active generate scopes and unknown
     /// module placeholders when `ignore_unknown_modules` is enabled.
     pub fn hierarchy(&self) -> Result<HashMap<String, Instance>, Error> {
-        let nodes = ffi::compilation_hierarchy(self.inner())?;
+        self.selected_hierarchy("")
+    }
+
+    /// The hierarchy rooted at one elaborated top, or None if it is absent.
+    pub fn hierarchy_for(&self, top: &str) -> Result<Option<Instance>, Error> {
+        if top.is_empty() {
+            return Ok(None);
+        }
+        Ok(self.selected_hierarchy(top)?.remove(top))
+    }
+
+    fn selected_hierarchy(&self, top: &str) -> Result<HashMap<String, Instance>, Error> {
+        let nodes = ffi::compilation_hierarchy(self.inner(), top)?;
         let mut instances: Vec<_> = nodes
             .into_iter()
             .map(|node| {
@@ -727,13 +767,30 @@ impl Compilation {
         Ok(roots)
     }
 
+    /// User-defined package names, without snapshotting any package members.
+    pub fn package_names(&self) -> Result<Vec<String>, Error> {
+        Ok(ffi::compilation_package_names(self.inner())?)
+    }
+
+    /// Snapshot one package by name. Missing names and the built-in std package return None.
+    pub fn package(&self, name: &str) -> Result<Option<Package>, Error> {
+        if name.is_empty() {
+            return Ok(None);
+        }
+        Ok(self.selected_packages(name)?.remove(name))
+    }
+
     /// Package value parameters and resolved typedefs.
     ///
     /// Constants are evaluated [`ConstantValue`] snapshots. Typedefs are
     /// resolved [`Type`] values in [`Package::types`], with an individual error
     /// for each unsupported type.
     pub fn packages(&self) -> Result<HashMap<String, Package>, Error> {
-        let snapshot = ffi::compilation_packages(self.inner())?;
+        self.selected_packages("")
+    }
+
+    fn selected_packages(&self, name: &str) -> Result<HashMap<String, Package>, Error> {
+        let snapshot = ffi::compilation_packages(self.inner(), name)?;
         snapshot
             .packages
             .into_iter()

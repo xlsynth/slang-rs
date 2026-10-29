@@ -27,8 +27,10 @@ std::unique_ptr<NativeCompilation> create_compilation(NativeConfig config);
 bool compilation_valid(const NativeCompilation& compilation) noexcept;
 rust::Vec<NativeDiagnostic> take_compilation_diagnostics(NativeCompilation& compilation);
 InterfaceSnapshot compilation_interfaces(const NativeCompilation& compilation, bool parameters,
-                                         bool skip_unsupported);
+                                         bool skip_unsupported, rust::Str top);
 rust::Vec<rust::String> compilation_modules(const NativeCompilation& compilation);
-rust::Vec<HierarchyNode> compilation_hierarchy(const NativeCompilation& compilation);
-PackageSnapshot compilation_packages(const NativeCompilation& compilation);
+rust::Vec<rust::String> compilation_top_names(const NativeCompilation& compilation);
+rust::Vec<rust::String> compilation_package_names(const NativeCompilation& compilation);
+rust::Vec<HierarchyNode> compilation_hierarchy(const NativeCompilation& compilation, rust::Str top);
+PackageSnapshot compilation_packages(const NativeCompilation& compilation, rust::Str name);
 } // namespace slang_rs

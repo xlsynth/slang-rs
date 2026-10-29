@@ -634,7 +634,7 @@ rust::Vec<NativeDiagnostic> take_compilation_diagnostics(NativeCompilation& comp
 }
 
 InterfaceSnapshot compilation_interfaces(const NativeCompilation& owner, bool parameters,
-                                         bool skip_unsupported) {
+                                         bool skip_unsupported, rust::Str top) {
     InterfaceSnapshot snapshot{};
     DiagnosticCollector diagnostics;
     diagnostics.setEngine(owner.impl->diagEngine);
@@ -644,7 +644,7 @@ InterfaceSnapshot compilation_interfaces(const NativeCompilation& owner, bool pa
                                symbol.getHierarchicalPath() + ": " + error.what(), symbol.location);
     };
     for (const auto* instance : owner.impl->compilation->getRoot().topInstances) {
-        if (instance->name.empty()) continue;
+        if (instance->name.empty() || (!top.empty() && instance->name != std::string_view(top.data(), top.size()))) continue;
         NativeModule module{};
         module.name = rustString(instance->name);
         if (parameters) {
@@ -687,17 +687,34 @@ rust::Vec<rust::String> compilation_modules(const NativeCompilation& owner) {
     return modules;
 }
 
-rust::Vec<HierarchyNode> compilation_hierarchy(const NativeCompilation& owner) {
+rust::Vec<rust::String> compilation_top_names(const NativeCompilation& owner) {
+    rust::Vec<rust::String> names;
+    for (const auto* instance : owner.impl->compilation->getRoot().topInstances)
+        if (!instance->name.empty()) names.push_back(rustString(instance->name));
+    return names;
+}
+
+rust::Vec<HierarchyNode> compilation_hierarchy(const NativeCompilation& owner, rust::Str top) {
     rust::Vec<HierarchyNode> result;
     for (const auto* instance : owner.impl->compilation->getRoot().topInstances)
-        appendInstance(*instance, -1, result, 0);
+        if (top.empty() || instance->name == std::string_view(top.data(), top.size()))
+            appendInstance(*instance, -1, result, 0);
     return result;
 }
 
-PackageSnapshot compilation_packages(const NativeCompilation& owner) {
+rust::Vec<rust::String> compilation_package_names(const NativeCompilation& owner) {
+    rust::Vec<rust::String> names;
+    auto& compilation = *owner.impl->compilation;
+    for (const auto* package : compilation.getPackages())
+        if (package != &compilation.getStdPackage()) names.push_back(rustString(package->name));
+    return names;
+}
+
+PackageSnapshot compilation_packages(const NativeCompilation& owner, rust::Str name) {
     PackageSnapshot snapshot{};
-    for (const auto* package : owner.impl->compilation->getPackages()) {
-        if (package == &owner.impl->compilation->getStdPackage()) continue;
+    auto& compilation = *owner.impl->compilation;
+    auto append = [&](const PackageSymbol* package) {
+        if (!package || package == &compilation.getStdPackage()) return;
         NativePackage output{};
         output.name = rustString(package->name);
         for (const auto& member : package->members()) {
@@ -723,6 +740,12 @@ PackageSnapshot compilation_packages(const NativeCompilation& owner) {
             }
         }
         snapshot.packages.push_back(std::move(output));
+    };
+    if (name.empty()) {
+        for (const auto* package : compilation.getPackages()) append(package);
+    }
+    else {
+        append(compilation.getPackage(std::string_view(name.data(), name.size())));
     }
     return snapshot;
 }
