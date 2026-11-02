@@ -59,9 +59,8 @@ Package value parameters are available in `Package.parameters` as evaluated
 `ConstantValue` values: integers, reals, byte strings, and compound values.
 Integers and enum values preserve width and signedness.
 Use `TryFrom` and `TryInto` for checked conversions to Rust integer types.
-`Package.enumerators` contains enum constants declared directly in the package.
-If `q` imports or re-exports `p::B`, look up `B` in the enumerators of `p`.
-A re-export lets SystemVerilog refer to `q::B`, but does not add `B` to the map for `q`.
+`Package.enumerators` maps the names of enum constants declared directly in the
+package to `IntegerValue`s.
 Typedefs are in `Package.types`:
 
 ```rust
