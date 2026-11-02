@@ -47,6 +47,7 @@ mod tests {
                 "pkg_a".to_string(),
                 Package {
                     name: "pkg_a".to_string(),
+                    enumerators: HashMap::new(),
                     parameters: HashMap::from([(
                         "a".to_string(),
                         integer_constant(32, true, 22u32),
@@ -58,6 +59,7 @@ mod tests {
                 "pkg_b".to_string(),
                 Package {
                     name: "pkg_b".to_string(),
+                    enumerators: HashMap::new(),
                     parameters: HashMap::from([
                         ("b".to_string(), integer_constant(32, true, 123u32)),
                         ("c".to_string(), integer_constant(32, true, 145u32)),
@@ -86,6 +88,31 @@ mod tests {
         let b: i32 = (&pkgs["pkg_b"].parameters["b"]).try_into().unwrap();
         assert_eq!(b, 123);
         assert_eq!(i32::try_from(&pkgs["pkg_b"].parameters["c"]).unwrap(), 145);
+    }
+
+    #[test]
+    fn enumerators_belong_to_the_declaring_package() {
+        let packages = Compilation::new(&SlangConfig {
+            sources: &[Source::text(
+                "
+                package a; typedef enum logic [2:0] { B = 1 } mode_t; endpackage
+                package b;
+                    typedef a::mode_t foreign_t;
+                    enum logic signed [3:0] { B = -2, C } setting;
+                endpackage
+                package only_alias; typedef a::mode_t foreign_t; endpackage
+            ",
+            )],
+            ..Default::default()
+        })
+        .unwrap()
+        .packages()
+        .unwrap();
+        assert_eq!(packages["a"].enumerators["B"], integer(3, false, 1u8));
+        assert_eq!(packages["b"].enumerators["B"], integer(4, true, 14u8));
+        assert_eq!(packages["b"].enumerators["C"], integer(4, true, 15u8));
+        assert!(!packages["b"].parameters.contains_key("B"));
+        assert!(packages["only_alias"].enumerators.is_empty());
     }
 
     #[test]

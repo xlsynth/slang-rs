@@ -59,6 +59,8 @@ Package value parameters are available in `Package.parameters` as evaluated
 `ConstantValue` values: integers, reals, byte strings, and compound values.
 Integers and enum values preserve width and signedness.
 Use `TryFrom` and `TryInto` for checked conversions to Rust integer types.
+`Package.enumerators` maps the names of enum constants declared directly in the
+package to `IntegerValue`s.
 Typedefs are in `Package.types`:
 
 ```rust
