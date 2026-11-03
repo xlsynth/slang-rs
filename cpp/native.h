@@ -26,6 +26,7 @@ public:
 std::unique_ptr<NativeCompilation> create_compilation(NativeConfig config);
 bool compilation_valid(const NativeCompilation& compilation) noexcept;
 rust::Vec<NativeDiagnostic> take_compilation_diagnostics(NativeCompilation& compilation);
+rust::Vec<NativeDiagnostic> compilation_query_errors(const NativeCompilation& compilation);
 InterfaceSnapshot compilation_interfaces(const NativeCompilation& compilation, bool parameters,
                                          bool skip_unsupported, rust::Str top);
 rust::Vec<rust::String> compilation_modules(const NativeCompilation& compilation);

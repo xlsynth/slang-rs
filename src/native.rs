@@ -2,15 +2,17 @@
 
 //! Owned snapshots from an in-process Slang compilation.
 
+use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
 use crate::{
-    ConstantValue, DiagnosticOptions, DiagnosticSeverity, Field, Instance, IntegerValue,
-    IntegralKind, LanguageVersion, Package, Parameter, Port, PortDir, PortList, Range, SlangConfig,
-    Source, TimeScale, TimeScaleMagnitude, TimeScaleValue, TimeUnit, Type, Variant, WarningPolicy,
+    CheckLevel, ConstantValue, DiagnosticOptions, DiagnosticSeverity, Field, Instance,
+    IntegerValue, IntegralKind, LanguageVersion, Package, Parameter, Port, PortDir, PortList,
+    Range, SlangConfig, Source, TimeScale, TimeScaleMagnitude, TimeScaleValue, TimeUnit, Type,
+    Variant, WarningPolicy,
 };
 use num_bigint::BigUint;
 
@@ -61,6 +63,11 @@ mod ffi {
         start: String,
         end: String,
     }
+    enum NativeCheckLevel {
+        Parse,
+        Semantic,
+        Analysis,
+    }
     enum NativeWarningPolicy {
         Default,
         All,
@@ -102,7 +109,7 @@ mod ffi {
         language_version: NativeLanguageVersion,
         single_unit: bool,
         libraries_inherit_macros: bool,
-        analysis_enabled: bool,
+        check_level: NativeCheckLevel,
         lint_only: bool,
         relax_enum_conversions: bool,
         allow_use_before_declare: bool,
@@ -256,6 +263,9 @@ mod ffi {
         fn take_compilation_diagnostics(
             compilation: Pin<&mut NativeCompilation>,
         ) -> Result<Vec<NativeDiagnostic>>;
+        fn compilation_query_errors(
+            compilation: &NativeCompilation,
+        ) -> Result<Vec<NativeDiagnostic>>;
         fn compilation_interfaces(
             compilation: &NativeCompilation,
             parameters: bool,
@@ -323,6 +333,16 @@ impl From<TimeScale> for ffi::NativeTimeScale {
         Self {
             base: value.base.into(),
             precision: value.precision.into(),
+        }
+    }
+}
+
+impl From<CheckLevel> for ffi::NativeCheckLevel {
+    fn from(value: CheckLevel) -> Self {
+        match value {
+            CheckLevel::Parse => Self::Parse,
+            CheckLevel::Semantic => Self::Semantic,
+            CheckLevel::Analysis => Self::Analysis,
         }
     }
 }
@@ -435,7 +455,7 @@ impl From<&SlangConfig<'_>> for ffi::NativeConfig {
             language_version: config.language_version.into(),
             single_unit: config.single_unit,
             libraries_inherit_macros: config.libraries_inherit_macros,
-            analysis_enabled: config.analysis_enabled,
+            check_level: config.check_level.into(),
             lint_only: config.lint_only,
             relax_enum_conversions: config.relax_enum_conversions,
             allow_use_before_declare: config.allow_use_before_declare,
@@ -553,6 +573,7 @@ fn snapshot_error(message: impl Into<String>) -> Error {
 /// Slang may lazily populate internal caches while answering a query.
 pub struct Compilation {
     native: cxx::UniquePtr<ffi::NativeCompilation>,
+    query_error: OnceCell<Error>,
     diagnostics: Vec<Diagnostic>,
     skip_unsupported_ports: bool,
     skip_unsupported_parameters: bool,
@@ -566,8 +587,10 @@ impl fmt::Debug for Compilation {
 }
 
 impl Compilation {
-    /// Parse and elaborate the configured sources once using the linked Slang
-    /// library. Compiler diagnostics are returned as structured errors.
+    /// Parse the sources and check syntax. By default, queries elaborate what they need.
+    /// Select [`CheckLevel::Semantic`] or [`CheckLevel::Analysis`] for eager checking.
+    /// A query that uncovers a compiler error returns semantic diagnostics for the design;
+    /// subsequent queries return the same error.
     pub fn new(config: &SlangConfig<'_>) -> Result<Self, Error> {
         let mut native = ffi::create_compilation(config.into())?;
         let valid = ffi::compilation_valid(&native);
@@ -583,6 +606,7 @@ impl Compilation {
         }
         Ok(Self {
             native,
+            query_error: OnceCell::new(),
             diagnostics,
             skip_unsupported_ports: config.skip_unsupported_ports,
             skip_unsupported_parameters: config.skip_unsupported_parameters,
@@ -596,7 +620,30 @@ impl Compilation {
             .expect("native compilation owner is non-null")
     }
 
-    /// Diagnostics produced during compilation, including nonfatal warnings.
+    /// Run a query and reject partial results if Slang recovered from a semantic error.
+    fn query<T>(
+        &self,
+        read: impl FnOnce(&ffi::NativeCompilation) -> Result<T, cxx::Exception>,
+    ) -> Result<T, Error> {
+        if let Some(error) = self.query_error.get() {
+            return Err(error.clone());
+        }
+        let result = read(self.inner());
+        let diagnostics = ffi::compilation_query_errors(self.inner())?;
+        if !diagnostics.is_empty() {
+            let error = Error {
+                message: "Slang elaboration failed".into(),
+                diagnostics: diagnostics
+                    .into_iter()
+                    .map(TryInto::try_into)
+                    .collect::<Result<_, _>>()?,
+            };
+            return Err(self.query_error.get_or_init(|| error).clone());
+        }
+        Ok(result?)
+    }
+
+    /// Diagnostics reported at construction, including nonfatal warnings.
     ///
     /// These are stable across design queries. Use `.to_vec()` to keep an
     /// owned copy after dropping the compilation.
@@ -679,7 +726,7 @@ impl Compilation {
         top: &str,
     ) -> Result<ffi::InterfaceSnapshot, Error> {
         let snapshot =
-            ffi::compilation_interfaces(self.inner(), parameters, skip_unsupported, top)?;
+            self.query(|c| ffi::compilation_interfaces(c, parameters, skip_unsupported, top))?;
         if !snapshot.diagnostics.is_empty() {
             return Err(Error {
                 message: "Unsupported SystemVerilog interface".into(),
@@ -696,12 +743,12 @@ impl Compilation {
     /// Names of module definitions in the configured sources, including
     /// definitions that are not instantiated as a top-level design.
     pub fn modules(&self) -> Result<Vec<String>, Error> {
-        Ok(ffi::compilation_modules(self.inner())?)
+        self.query(ffi::compilation_modules)
     }
 
     /// Names of elaborated top instances, the keys used by the port and hierarchy queries.
     pub fn top_names(&self) -> Result<Vec<String>, Error> {
-        Ok(ffi::compilation_top_names(self.inner())?)
+        self.query(ffi::compilation_top_names)
     }
 
     /// Elaborated hierarchy, including active generate scopes and unknown
@@ -719,7 +766,7 @@ impl Compilation {
     }
 
     fn selected_hierarchy(&self, top: &str) -> Result<HashMap<String, Instance>, Error> {
-        let nodes = ffi::compilation_hierarchy(self.inner(), top)?;
+        let nodes = self.query(|c| ffi::compilation_hierarchy(c, top))?;
         let mut instances: Vec<_> = nodes
             .into_iter()
             .map(|node| {
@@ -769,7 +816,7 @@ impl Compilation {
 
     /// User-defined package names, without snapshotting any package members.
     pub fn package_names(&self) -> Result<Vec<String>, Error> {
-        Ok(ffi::compilation_package_names(self.inner())?)
+        self.query(ffi::compilation_package_names)
     }
 
     /// Snapshot one package by name. Missing names and the built-in std package return None.
@@ -790,7 +837,7 @@ impl Compilation {
     }
 
     fn selected_packages(&self, name: &str) -> Result<HashMap<String, Package>, Error> {
-        let snapshot = ffi::compilation_packages(self.inner(), name)?;
+        let snapshot = self.query(|c| ffi::compilation_packages(c, name))?;
         snapshot
             .packages
             .into_iter()

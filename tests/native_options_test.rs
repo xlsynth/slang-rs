@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use slang_rs::{
-    Compilation, ConstantValue, DiagnosticOptions, DiagnosticOverride, DiagnosticSeverity,
-    LanguageVersion, SlangConfig, Source, TimeScale, TimeScaleMagnitude, TimeScaleValue, TimeUnit,
-    TranslateOff, WarningPolicy,
+    CheckLevel, Compilation, ConstantValue, DiagnosticOptions, DiagnosticOverride,
+    DiagnosticSeverity, LanguageVersion, SlangConfig, Source, TimeScale, TimeScaleMagnitude,
+    TimeScaleValue, TimeUnit, TranslateOff, WarningPolicy,
 };
 use std::num::NonZeroU32;
 
@@ -21,6 +21,56 @@ const REDEFINED_MACRO: Source<'static> = Source::text(
 );
 
 #[test]
+fn imports_defer_semantic_errors_until_a_query_needs_the_bad_declaration() {
+    let sources = [Source::named_text(
+        "sizes.sv",
+        "
+        package good; localparam int WIDTH = 5 + 3; endpackage
+        package bad; localparam int WIDTH = MISSING; endpackage
+    ",
+    )];
+    let config = SlangConfig {
+        sources: &sources,
+        ..Default::default()
+    };
+    let compilation = Compilation::new(&config).unwrap();
+    assert!(
+        compilation
+            .package_names()
+            .unwrap()
+            .iter()
+            .any(|name| name == "bad")
+    );
+    let good = compilation.package("good").unwrap().unwrap();
+    assert_eq!(i32::try_from(&good.parameters["WIDTH"]).unwrap(), 8);
+
+    let error = compilation.package("bad").unwrap_err();
+    let missing = error
+        .diagnostics
+        .iter()
+        .find(|d| d.code == "UndeclaredIdentifier")
+        .unwrap();
+    assert!(
+        missing
+            .location
+            .as_ref()
+            .unwrap()
+            .file
+            .ends_with("sizes.sv")
+    );
+    assert_eq!(compilation.package("bad").unwrap_err(), error);
+
+    for check_level in [CheckLevel::Semantic, CheckLevel::Analysis] {
+        let error = Compilation::new(&SlangConfig {
+            check_level,
+            ..config
+        })
+        .unwrap_err();
+        assert!(error.diagnostics.contains(missing));
+    }
+}
+
+#[test]
 fn analysis_diagnostics_respect_structured_warning_policy() {
     let overrides = [DiagnosticOverride {
         name: "multiple-always-assigns",
@@ -28,6 +78,7 @@ fn analysis_diagnostics_respect_structured_warning_policy() {
     }];
     let error = Compilation::new(&SlangConfig {
         sources: &[MULTIPLE_DRIVERS],
+        check_level: CheckLevel::Analysis,
         diagnostics: DiagnosticOptions {
             overrides: &overrides,
             ..Default::default()
@@ -45,6 +96,7 @@ fn analysis_diagnostics_respect_structured_warning_policy() {
 
     let baseline_error = Compilation::new(&SlangConfig {
         sources: &[MULTIPLE_DRIVERS],
+        check_level: CheckLevel::Analysis,
         diagnostics: DiagnosticOptions {
             warnings: WarningPolicy::None,
             ..Default::default()
@@ -59,7 +111,7 @@ fn analysis_diagnostics_respect_structured_warning_policy() {
 
     let compilation = Compilation::new(&SlangConfig {
         sources: &[MULTIPLE_DRIVERS],
-        analysis_enabled: false,
+        check_level: CheckLevel::Semantic,
         diagnostics: DiagnosticOptions {
             overrides: &overrides,
             ..Default::default()
@@ -84,6 +136,7 @@ fn warning_defaults_all_none_and_explicit_overrides_are_distinct() {
     )];
     let default = Compilation::new(&SlangConfig {
         sources: &sources,
+        check_level: CheckLevel::Analysis,
         ..Default::default()
     })
     .unwrap();
@@ -95,6 +148,7 @@ fn warning_defaults_all_none_and_explicit_overrides_are_distinct() {
     );
     let all = Compilation::new(&SlangConfig {
         sources: &sources,
+        check_level: CheckLevel::Analysis,
         diagnostics: DiagnosticOptions {
             warnings: WarningPolicy::All,
             ..Default::default()
@@ -137,6 +191,7 @@ fn warning_defaults_all_none_and_explicit_overrides_are_distinct() {
 
     let error = Compilation::new(&SlangConfig {
         sources: &sources,
+        check_level: CheckLevel::Analysis,
         diagnostics: DiagnosticOptions {
             warnings: WarningPolicy::None,
             overrides: &[DiagnosticOverride {
@@ -386,6 +441,7 @@ fn lint_only_does_not_automatically_instantiate_modules() {
     let mut config = SlangConfig {
         sources: &sources,
         tops: &["recursive"],
+        check_level: CheckLevel::Semantic,
         num_threads: Some(NonZeroU32::new(1).unwrap()),
         ..Default::default()
     };
@@ -396,6 +452,7 @@ fn lint_only_does_not_automatically_instantiate_modules() {
             .iter()
             .any(|diagnostic| { diagnostic.code == "InfinitelyRecursiveHierarchy" })
     );
+    config.check_level = CheckLevel::Parse;
     config.lint_only = true;
     let error = Compilation::new(&config).unwrap_err();
     assert!(
@@ -419,6 +476,7 @@ fn named_warning_overrides_accept_native_diagnostics_and_groups() {
     let compilation = Compilation::new(&SlangConfig {
         sources: &sources,
         tops: &["top"],
+        check_level: CheckLevel::Semantic,
         ..Default::default()
     })
     .unwrap();
@@ -444,6 +502,7 @@ fn named_warning_overrides_accept_native_diagnostics_and_groups() {
     let compilation = Compilation::new(&SlangConfig {
         sources: &sources,
         tops: &["top"],
+        check_level: CheckLevel::Semantic,
         diagnostics: DiagnosticOptions {
             overrides: &overrides,
             ..Default::default()
@@ -471,6 +530,7 @@ fn use_before_declaration_can_be_enabled_for_implicit_port_connections() {
     let mut config = SlangConfig {
         sources: &sources,
         tops: &["top"],
+        check_level: CheckLevel::Semantic,
         ..Default::default()
     };
     let error = Compilation::new(&config).unwrap_err();

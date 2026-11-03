@@ -610,8 +610,12 @@ std::unique_ptr<NativeCompilation> create_compilation(NativeConfig input) {
     defaultLibrary->isDefault = true;
     state.compilation = std::make_unique<Compilation>(options, defaultLibrary);
     for (auto& tree : state.syntaxTrees) state.compilation->addSyntaxTree(tree);
-    engine.issue(state.compilation->getAllDiagnostics());
-    if (config.analysis_enabled && !config.lint_only) {
+    const auto checkLevel = config.lint_only ? NativeCheckLevel::Semantic : config.check_level;
+    if (checkLevel == NativeCheckLevel::Parse)
+        engine.issue(state.compilation->getParseDiagnostics());
+    else
+        engine.issue(state.compilation->getAllDiagnostics());
+    if (checkLevel == NativeCheckLevel::Analysis) {
         state.compilation->freeze();
         analysis::AnalysisOptions analysisOptions;
         analysisOptions.flags |= analysis::AnalysisFlags::CheckUnused |
@@ -631,6 +635,16 @@ bool compilation_valid(const NativeCompilation& compilation) noexcept {
 
 rust::Vec<NativeDiagnostic> take_compilation_diagnostics(NativeCompilation& compilation) {
     return std::move(compilation.impl->diagnostics->diagnostics);
+}
+
+// Slang 11 exposes its accumulated semantic diagnostics only after full elaboration.
+// Pay that cost on the error path so a recovered value or port width is never mistaken for valid.
+rust::Vec<NativeDiagnostic> compilation_query_errors(const NativeCompilation& owner) {
+    auto& state = *owner.impl;
+    if (state.compilation->isElaborated() || !state.compilation->hasIssuedErrors()) return {};
+    state.diagEngine.issue(state.compilation->getSemanticDiagnostics());
+    if (state.diagEngine.getNumErrors() == 0) return {};
+    return std::move(state.diagnostics->diagnostics);
 }
 
 InterfaceSnapshot compilation_interfaces(const NativeCompilation& owner, bool parameters,

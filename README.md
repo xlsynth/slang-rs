@@ -103,7 +103,7 @@ uses paths relative to the parent, including array indices and generate scopes;
 
 ```rust
 use slang_rs::{
-    DiagnosticOptions, DiagnosticOverride, DiagnosticSeverity, LanguageVersion,
+    CheckLevel, DiagnosticOptions, DiagnosticOverride, DiagnosticSeverity, LanguageVersion,
     SlangConfig, Source, WarningPolicy,
 };
 
@@ -116,6 +116,7 @@ let config = SlangConfig {
     tops: &["top"],
     language_version: LanguageVersion::SystemVerilog2023,
     single_unit: true,
+    check_level: CheckLevel::Analysis,
     diagnostics: DiagnosticOptions {
         warnings: WarningPolicy::All,
         overrides: &[DiagnosticOverride {
@@ -135,6 +136,14 @@ with `parameters`.
 
 Sources load in `sources` order. With `single_unit: true`, they share preprocessor
 definitions in that order.
+
+Use `check_level` to choose how much to check at construction:
+
+- `CheckLevel::Parse` (default) checks preprocessing and syntax. Queries elaborate the declarations they need and report errors they encounter.
+- `CheckLevel::Semantic` also elaborates the whole design, so errors in declarations you never query are reported up front.
+- `CheckLevel::Analysis` adds Slang's analysis passes, such as multiple-driver checks.
+
+Warning settings control severity at each level. Lint-only mode always uses semantic checking and skips automatic top-level instantiation.
 
 Diagnostics are collected without printing. Use `Compilation::diagnostics()`
 to inspect warnings; failures carry diagnostics in `Error`. See the

@@ -5,8 +5,9 @@ pub use native::{Compilation, Diagnostic, Error, SourceLocation};
 
 mod config;
 pub use config::{
-    DiagnosticOptions, DiagnosticOverride, DiagnosticSeverity, LanguageVersion, SlangConfig,
-    Source, TimeScale, TimeScaleMagnitude, TimeScaleValue, TimeUnit, TranslateOff, WarningPolicy,
+    CheckLevel, DiagnosticOptions, DiagnosticOverride, DiagnosticSeverity, LanguageVersion,
+    SlangConfig, Source, TimeScale, TimeScaleMagnitude, TimeScaleValue, TimeUnit, TranslateOff,
+    WarningPolicy,
 };
 
 mod extract;
