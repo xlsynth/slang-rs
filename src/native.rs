@@ -2,6 +2,7 @@
 
 //! Owned snapshots from an in-process Slang compilation.
 
+use std::borrow::Cow;
 use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::fmt;
@@ -10,9 +11,9 @@ use std::rc::Rc;
 
 use crate::{
     CheckLevel, ConstantValue, DiagnosticOptions, DiagnosticSeverity, Field, Instance,
-    IntegerValue, IntegralKind, LanguageVersion, Package, Parameter, Port, PortDir, PortList,
-    Range, SlangConfig, Source, TimeScale, TimeScaleMagnitude, TimeScaleValue, TimeUnit, Type,
-    Variant, WarningPolicy,
+    IntegerValue, IntegralKind, LanguageVersion, Package, PackageLookup, Parameter, Port, PortDir,
+    PortList, Range, SlangConfig, Source, TimeScale, TimeScaleMagnitude, TimeScaleValue, TimeUnit,
+    Type, Variant, WarningPolicy,
 };
 use num_bigint::BigUint;
 
@@ -243,15 +244,17 @@ mod ffi {
         ty: usize,
         diagnostics: Vec<NativeDiagnostic>,
     }
-    struct NativePackage {
-        name: String,
-        values: Vec<NativePackageValue>,
-        types: Vec<NativePackageType>,
+    enum PackageSelection {
+        All,
+        Parameter,
+        TypeAlias,
     }
     struct PackageSnapshot {
+        name: String,
+        parameters: Vec<NativePackageValue>,
+        aliases: Vec<NativePackageType>,
         types: Vec<TypeNode>,
         values: Vec<ValueNode>,
-        packages: Vec<NativePackage>,
     }
 
     unsafe extern "C++" {
@@ -279,10 +282,14 @@ mod ffi {
             top: &str,
         ) -> Result<Vec<HierarchyNode>>;
         fn compilation_package_names(compilation: &NativeCompilation) -> Result<Vec<String>>;
-        fn compilation_packages(
+        fn compilation_has_package(compilation: &NativeCompilation, name: &str) -> Result<bool>;
+        fn compilation_read_package(
             compilation: &NativeCompilation,
             name: &str,
+            selection: PackageSelection,
+            member: &str,
         ) -> Result<PackageSnapshot>;
+        fn compilation_packages(compilation: &NativeCompilation) -> Result<Vec<PackageSnapshot>>;
     }
 }
 
@@ -819,71 +826,133 @@ impl Compilation {
         self.query(ffi::compilation_package_names)
     }
 
-    /// Snapshot one package by name. Missing names and the built-in std package return None.
-    pub fn package(&self, name: &str) -> Result<Option<Package>, Error> {
-        if name.is_empty() {
-            return Ok(None);
-        }
-        Ok(self.selected_packages(name)?.remove(name))
+    /// Open a view without evaluating any members. Missing names and the built-in std
+    /// package return `None`. Use [`PackageView::snapshot`] to detach all members.
+    pub fn package(&self, name: &str) -> Result<Option<PackageView<'_>>, Error> {
+        let found = self.query(|c| ffi::compilation_has_package(c, name))?;
+        Ok(found.then(|| PackageView {
+            compilation: self,
+            name: name.to_owned(),
+        }))
     }
 
-    /// Package value parameters and resolved typedefs.
-    ///
-    /// Constants are evaluated [`ConstantValue`] snapshots. Typedefs are
-    /// resolved [`Type`] values in [`Package::types`], with an individual error
-    /// for each unsupported type.
+    /// Snapshot every user package, including its value parameters and typedefs.
     pub fn packages(&self) -> Result<HashMap<String, Package>, Error> {
-        self.selected_packages("")
-    }
-
-    fn selected_packages(&self, name: &str) -> Result<HashMap<String, Package>, Error> {
-        let snapshot = self.query(|c| ffi::compilation_packages(c, name))?;
-        snapshot
-            .packages
+        self.query(ffi::compilation_packages)?
             .into_iter()
-            .map(|package| {
-                let parameters = package
-                    .values
-                    .into_iter()
-                    .map(|parameter| {
-                        Ok((
-                            parameter.name,
-                            convert_value(&snapshot.values, parameter.value, 0)?,
-                        ))
-                    })
-                    .collect::<Result<_, Error>>()?;
-                let types = package
-                    .types
-                    .into_iter()
-                    .map(|alias| {
-                        let ty = if alias.diagnostics.is_empty() {
-                            convert_type(&snapshot.types, alias.ty, 0)
-                        } else {
-                            Err(Error {
-                                message: format!(
-                                    "Unsupported package type {}::{}",
-                                    package.name, alias.name
-                                ),
-                                diagnostics: alias
-                                    .diagnostics
-                                    .into_iter()
-                                    .map(TryInto::try_into)
-                                    .collect::<Result<_, _>>()?,
-                            })
-                        };
-                        Ok((alias.name, ty))
-                    })
-                    .collect::<Result<_, Error>>()?;
-                Ok((
-                    package.name.clone(),
-                    Package {
-                        name: package.name,
-                        parameters,
-                        types,
-                    },
-                ))
+            .map(|snapshot| {
+                let package = Package::try_from(snapshot)?;
+                Ok((package.name.clone(), package))
             })
             .collect()
+    }
+}
+
+/// A named package in a live compilation. [`PackageLookup`] resolves only the
+/// requested member and its dependencies. Keep the returned value for repeated use.
+#[derive(Debug)]
+pub struct PackageView<'a> {
+    compilation: &'a Compilation,
+    name: String,
+}
+
+impl PackageView<'_> {
+    /// Evaluate all value parameters and typedefs into an owned package that can
+    /// outlive the compilation or be sent to another thread.
+    pub fn snapshot(&self) -> Result<Package, Error> {
+        self.read(ffi::PackageSelection::All, "")?.try_into()
+    }
+
+    /// Request either one direct member or the complete package from Slang.
+    fn read(
+        &self,
+        selection: ffi::PackageSelection,
+        member: &str,
+    ) -> Result<ffi::PackageSnapshot, Error> {
+        self.compilation
+            .query(|c| ffi::compilation_read_package(c, &self.name, selection, member))
+    }
+}
+
+impl PackageLookup for PackageView<'_> {
+    fn parameter(&self, name: &str) -> Result<Option<Cow<'_, ConstantValue>>, Error> {
+        let snapshot = self.read(ffi::PackageSelection::Parameter, name)?;
+        snapshot
+            .parameters
+            .first()
+            .map(|p| convert_value(&snapshot.values, p.value, 0).map(Cow::Owned))
+            .transpose()
+    }
+
+    fn ty(&self, name: &str) -> Result<Option<Cow<'_, Type>>, Error> {
+        let snapshot = self.read(ffi::PackageSelection::TypeAlias, name)?;
+        snapshot
+            .aliases
+            .into_iter()
+            .next()
+            .map(|alias| {
+                convert_alias(
+                    &self.name,
+                    &alias.name,
+                    alias.ty,
+                    alias.diagnostics,
+                    &snapshot.types,
+                )
+                .map(Cow::Owned)
+            })
+            .transpose()
+    }
+}
+
+impl TryFrom<ffi::PackageSnapshot> for Package {
+    type Error = Error;
+
+    fn try_from(snapshot: ffi::PackageSnapshot) -> Result<Self, Error> {
+        let parameters = snapshot
+            .parameters
+            .into_iter()
+            .map(|p| Ok((p.name, convert_value(&snapshot.values, p.value, 0)?)))
+            .collect::<Result<_, Error>>()?;
+        let types = snapshot
+            .aliases
+            .into_iter()
+            .map(|alias| {
+                let ty = convert_alias(
+                    &snapshot.name,
+                    &alias.name,
+                    alias.ty,
+                    alias.diagnostics,
+                    &snapshot.types,
+                );
+                (alias.name, ty)
+            })
+            .collect();
+        Ok(Self {
+            name: snapshot.name,
+            parameters,
+            types,
+        })
+    }
+}
+
+/// Decode a native typedef, preserving diagnostics for types Rust cannot represent.
+fn convert_alias(
+    package: &str,
+    name: &str,
+    index: usize,
+    diagnostics: Vec<ffi::NativeDiagnostic>,
+    types: &[ffi::TypeNode],
+) -> Result<Type, Error> {
+    if diagnostics.is_empty() {
+        convert_type(types, index, 0)
+    } else {
+        Err(Error {
+            message: format!("Unsupported package type {package}::{name}"),
+            diagnostics: diagnostics
+                .into_iter()
+                .map(TryInto::try_into)
+                .collect::<Result<_, _>>()?,
+        })
     }
 }
 

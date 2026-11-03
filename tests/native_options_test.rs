@@ -41,10 +41,20 @@ fn imports_defer_semantic_errors_until_a_query_needs_the_bad_declaration() {
             .iter()
             .any(|name| name == "bad")
     );
-    let good = compilation.package("good").unwrap().unwrap();
+    let good = compilation
+        .package("good")
+        .unwrap()
+        .unwrap()
+        .snapshot()
+        .unwrap();
     assert_eq!(i32::try_from(&good.parameters["WIDTH"]).unwrap(), 8);
 
-    let error = compilation.package("bad").unwrap_err();
+    let error = compilation
+        .package("bad")
+        .unwrap()
+        .unwrap()
+        .snapshot()
+        .unwrap_err();
     let missing = error
         .diagnostics
         .iter()

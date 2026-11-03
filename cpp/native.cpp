@@ -724,43 +724,70 @@ rust::Vec<rust::String> compilation_package_names(const NativeCompilation& owner
     return names;
 }
 
-PackageSnapshot compilation_packages(const NativeCompilation& owner, rust::Str name) {
-    PackageSnapshot snapshot{};
+// Locate a user package without visiting its declarations.
+static const PackageSymbol* findPackage(const NativeCompilation& owner, rust::Str name) {
+    if (name.empty()) return nullptr;
     auto& compilation = *owner.impl->compilation;
-    auto append = [&](const PackageSymbol* package) {
-        if (!package || package == &compilation.getStdPackage()) return;
-        NativePackage output{};
-        output.name = rustString(package->name);
-        for (const auto& member : package->members()) {
-            if (member.kind == SymbolKind::Parameter) {
-                const auto& value = member.as<ParameterSymbol>().getValue();
-                output.values.push_back(NativePackageValue{rustString(member.name),
-                    appendValue(value, snapshot.values)});
-            }
-            else if (member.kind == SymbolKind::TypeAlias) {
-                NativePackageType type{};
-                type.name = rustString(member.name);
-                try {
-                    type.ty = appendType(member.as<TypeAliasType>(), snapshot.types);
-                }
-                catch (const Unsupported& error) {
-                    DiagnosticCollector diagnostics;
-                    diagnostics.setEngine(owner.impl->diagEngine);
-                    diagnostics.append(NativeSeverity::Error, "UnsupportedPackageType",
-                                       member.getLexicalPath() + ": " + error.what(), member.location);
-                    type.diagnostics = std::move(diagnostics.diagnostics);
-                }
-                output.types.push_back(std::move(type));
-            }
+    auto* pkg = compilation.getPackage(std::string_view(name.data(), name.size()));
+    return pkg == &compilation.getStdPackage() ? nullptr : pkg;
+}
+
+bool compilation_has_package(const NativeCompilation& owner, rust::Str name) {
+    return findPackage(owner, name) != nullptr;
+}
+
+// A named lookup uses the scope's symbol index; only a full snapshot walks the members.
+static PackageSnapshot readPackage(const NativeCompilation& owner, const PackageSymbol& package,
+                                   PackageSelection selection, std::string_view name) {
+    PackageSnapshot snapshot{};
+    snapshot.name = rustString(package.name);
+    auto append = [&](const Symbol& member) {
+        if (member.kind == SymbolKind::Parameter) {
+            const auto& value = member.as<ParameterSymbol>().getValue();
+            snapshot.parameters.push_back(NativePackageValue{rustString(member.name),
+                appendValue(value, snapshot.values)});
         }
-        snapshot.packages.push_back(std::move(output));
+        else if (member.kind == SymbolKind::TypeAlias) {
+            NativePackageType type{};
+            type.name = rustString(member.name);
+            try {
+                type.ty = appendType(member.as<TypeAliasType>(), snapshot.types);
+            }
+            catch (const Unsupported& error) {
+                DiagnosticCollector diagnostics;
+                diagnostics.setEngine(owner.impl->diagEngine);
+                diagnostics.append(NativeSeverity::Error, "UnsupportedPackageType",
+                                   member.getLexicalPath() + ": " + error.what(), member.location);
+                type.diagnostics = std::move(diagnostics.diagnostics);
+            }
+            snapshot.aliases.push_back(std::move(type));
+        }
     };
-    if (name.empty()) {
-        for (const auto* package : compilation.getPackages()) append(package);
+    if (selection == PackageSelection::All) {
+        for (const auto& member : package.members()) append(member);
     }
-    else {
-        append(compilation.getPackage(std::string_view(name.data(), name.size())));
+    else if (!name.empty()) {
+        const auto* member = package.find(name);
+        const auto kind = selection == PackageSelection::Parameter ? SymbolKind::Parameter : SymbolKind::TypeAlias;
+        if (member && member->kind == kind) append(*member);
     }
     return snapshot;
+}
+
+PackageSnapshot compilation_read_package(const NativeCompilation& owner, rust::Str name,
+                                         PackageSelection selection, rust::Str member) {
+    const auto* pkg = findPackage(owner, name);
+    if (!pkg) throw std::runtime_error("Package view no longer refers to a user package");
+    return readPackage(owner, *pkg, selection, std::string_view(member.data(), member.size()));
+}
+
+rust::Vec<PackageSnapshot> compilation_packages(const NativeCompilation& owner) {
+    rust::Vec<PackageSnapshot> result;
+    auto& compilation = *owner.impl->compilation;
+    for (const auto* pkg : compilation.getPackages()) {
+        if (pkg != &compilation.getStdPackage())
+            result.push_back(readPackage(owner, *pkg, PackageSelection::All, {}));
+    }
+    return result;
 }
 } // namespace slang_rs

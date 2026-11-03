@@ -1,8 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap, ops::Index};
 
 use crate::{ConstantValue, Error, Type};
+
+/// Read a direct member of a live package view or an owned package snapshot.
+/// A lookup returns `None` if the package has no member of the requested kind
+/// with that name. An unrepresentable type or evaluation error is an `Err`.
+/// Live lookups return owned data; snapshot lookups borrow the stored data.
+pub trait PackageLookup {
+    /// Read the evaluated value of a parameter or localparam.
+    fn parameter(&self, name: &str) -> Result<Option<Cow<'_, ConstantValue>>, Error>;
+
+    /// Resolve a typedef declared in this package.
+    fn ty(&self, name: &str) -> Result<Option<Cow<'_, Type>>, Error>;
+}
 
 /// Evaluated value parameters, localparams, and resolved typedefs in a package.
 ///
@@ -28,4 +40,32 @@ pub struct Package {
     /// access to the package's constants or other types. Results are owned and
     /// remain valid after the compilation is dropped.
     pub types: HashMap<String, Result<Type, Error>>,
+}
+
+impl PackageLookup for Package {
+    fn parameter(&self, name: &str) -> Result<Option<Cow<'_, ConstantValue>>, Error> {
+        Ok(self.parameters.get(name).map(Cow::Borrowed))
+    }
+
+    fn ty(&self, name: &str) -> Result<Option<Cow<'_, Type>>, Error> {
+        self.types
+            .get(name)
+            .map(|ty| ty.as_ref().map(Cow::Borrowed).map_err(Clone::clone))
+            .transpose()
+    }
+}
+
+impl Package {
+    /// Borrow a value parameter from this snapshot, or return `None` if absent.
+    pub fn get(&self, name: &str) -> Option<&ConstantValue> {
+        self.parameters.get(name)
+    }
+}
+
+impl Index<&str> for Package {
+    type Output = ConstantValue;
+
+    fn index(&self, name: &str) -> &Self::Output {
+        &self.parameters[name]
+    }
 }

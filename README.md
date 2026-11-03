@@ -55,14 +55,14 @@ Use `Source::file("top.sv")` to read an existing file.
 
 ## Packages and types
 
-Package value parameters are available in `Package.parameters` as evaluated
-`ConstantValue` values: integers, reals, byte strings, and compound values.
+Open a package with `Compilation::package` and use the `PackageLookup` trait to read one value parameter, localparam, or typedef. Slang resolves the member and its dependencies without walking unrelated declarations. A view borrows its compilation. Use `view.snapshot()?` to retain all supported members independently of the compilation, or `compilation.packages()?` to snapshot every package. Both a view and a snapshot implement the same lookup trait.
+
 Integers and enum values preserve width and signedness.
 Use `TryFrom` and `TryInto` for checked conversions to Rust integer types.
 Typedefs are in `Package.types`:
 
 ```rust
-use slang_rs::{Compilation, SlangConfig, Source};
+use slang_rs::{Compilation, PackageLookup, SlangConfig, Source};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = SlangConfig {
@@ -75,11 +75,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "#)],
         ..Default::default()
     };
-    let packages = Compilation::new(&config)?.packages()?;
-    let pkg = &packages["my_pkg"];
-    let count = u64::try_from(&pkg.parameters["COUNT"])?;
-    let wide: num_bigint::BigInt = (&pkg.parameters["WIDE"]).try_into()?;
-    let word_type = pkg.types["word_t"].as_ref().unwrap();
+    let compilation = Compilation::new(&config)?;
+    let pkg = compilation.package("my_pkg")?.unwrap();
+    let count = u64::try_from(pkg.parameter("COUNT")?.unwrap().as_ref())?;
+    let wide: num_bigint::BigInt = pkg.parameter("WIDE")?.unwrap().as_ref().try_into()?;
+    let word_type = pkg.ty("word_t")?.unwrap();
     assert_eq!(count, 42);
     assert_eq!(wide, num_bigint::BigInt::from(1u8) << 64);
     assert_eq!(word_type.width()?, 16);

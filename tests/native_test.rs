@@ -103,7 +103,11 @@ fn selective_queries_snapshot_only_the_named_declaration() {
     let packages = compilation.packages().unwrap();
     for name in names {
         assert_eq!(
-            compilation.package(&name).unwrap().as_ref(),
+            compilation
+                .package(&name)
+                .unwrap()
+                .map(|view| view.snapshot().unwrap())
+                .as_ref(),
             packages.get(&name)
         );
     }

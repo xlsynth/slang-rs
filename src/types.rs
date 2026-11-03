@@ -18,7 +18,7 @@ pub enum IntegralKind {
     Time,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     Integral {
         kind: IntegralKind,
@@ -60,13 +60,13 @@ pub enum Type {
     },
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Field {
     pub name: String,
     pub ty: Type,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Range {
     /// The left bound as declared, which may be smaller than the right bound.
     pub left: i32,
@@ -74,7 +74,7 @@ pub struct Range {
     pub right: i32,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Variant {
     pub name: String,
     pub value: IntegerValue,

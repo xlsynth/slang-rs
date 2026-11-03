@@ -23,4 +23,5 @@ mod hierarchy;
 pub use hierarchy::Instance;
 
 mod package;
-pub use package::Package;
+pub use native::PackageView;
+pub use package::{Package, PackageLookup};

@@ -10,6 +10,7 @@ struct NativeConfig;
 struct InterfaceSnapshot;
 struct HierarchyNode;
 struct PackageSnapshot;
+enum class PackageSelection : std::uint8_t;
 
 // The implementation owns configuration, source buffers, and syntax trees for
 // longer than the semantic compilation and all of its AST symbols.
@@ -33,5 +34,8 @@ rust::Vec<rust::String> compilation_modules(const NativeCompilation& compilation
 rust::Vec<rust::String> compilation_top_names(const NativeCompilation& compilation);
 rust::Vec<rust::String> compilation_package_names(const NativeCompilation& compilation);
 rust::Vec<HierarchyNode> compilation_hierarchy(const NativeCompilation& compilation, rust::Str top);
-PackageSnapshot compilation_packages(const NativeCompilation& compilation, rust::Str name);
+bool compilation_has_package(const NativeCompilation& compilation, rust::Str name);
+PackageSnapshot compilation_read_package(const NativeCompilation& compilation, rust::Str name,
+                                         PackageSelection selection, rust::Str member);
+rust::Vec<PackageSnapshot> compilation_packages(const NativeCompilation& compilation);
 } // namespace slang_rs
