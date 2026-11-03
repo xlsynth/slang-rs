@@ -247,11 +247,13 @@ mod ffi {
     enum PackageSelection {
         All,
         Parameter,
+        Enumerator,
         TypeAlias,
     }
     struct PackageSnapshot {
         name: String,
         parameters: Vec<NativePackageValue>,
+        enumerators: Vec<NativeVariant>,
         aliases: Vec<NativePackageType>,
         types: Vec<TypeNode>,
         values: Vec<ValueNode>,
@@ -836,7 +838,7 @@ impl Compilation {
         }))
     }
 
-    /// Snapshot every user package, including its value parameters and typedefs.
+    /// Snapshot every user package, including its value parameters, enum constants, and typedefs.
     pub fn packages(&self) -> Result<HashMap<String, Package>, Error> {
         self.query(ffi::compilation_packages)?
             .into_iter()
@@ -857,7 +859,7 @@ pub struct PackageView<'a> {
 }
 
 impl PackageView<'_> {
-    /// Evaluate all value parameters and typedefs into an owned package that can
+    /// Evaluate all value parameters, enum constants, and typedefs into an owned package that can
     /// outlive the compilation or be sent to another thread.
     pub fn snapshot(&self) -> Result<Package, Error> {
         self.read(ffi::PackageSelection::All, "")?.try_into()
@@ -882,6 +884,14 @@ impl PackageLookup for PackageView<'_> {
             .first()
             .map(|p| convert_value(&snapshot.values, p.value, 0).map(Cow::Owned))
             .transpose()
+    }
+
+    fn enumerator(&self, name: &str) -> Result<Option<Cow<'_, IntegerValue>>, Error> {
+        let snapshot = self.read(ffi::PackageSelection::Enumerator, name)?;
+        Ok(snapshot
+            .enumerators
+            .first()
+            .map(|v| Cow::Owned(convert_integer(&v.value))))
     }
 
     fn ty(&self, name: &str) -> Result<Option<Cow<'_, Type>>, Error> {
@@ -929,6 +939,11 @@ impl TryFrom<ffi::PackageSnapshot> for Package {
             .collect();
         Ok(Self {
             name: snapshot.name,
+            enumerators: snapshot
+                .enumerators
+                .into_iter()
+                .map(|v| (v.name, convert_integer(&v.value)))
+                .collect(),
             parameters,
             types,
         })

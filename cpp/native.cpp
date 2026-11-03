@@ -7,6 +7,7 @@
 #include "slang/ast/symbols/BlockSymbols.h"
 #include "slang/ast/symbols/CompilationUnitSymbols.h"
 #include "slang/ast/symbols/InstanceSymbols.h"
+#include "slang/ast/symbols/MemberSymbols.h"
 #include "slang/ast/symbols/ParameterSymbols.h"
 #include "slang/ast/symbols/PortSymbols.h"
 #include "slang/ast/symbols/VariableSymbols.h"
@@ -741,13 +742,26 @@ static PackageSnapshot readPackage(const NativeCompilation& owner, const Package
                                    PackageSelection selection, std::string_view name) {
     PackageSnapshot snapshot{};
     snapshot.name = rustString(package.name);
-    auto append = [&](const Symbol& member) {
-        if (member.kind == SymbolKind::Parameter) {
+    auto append = [&](const Symbol& entry) {
+        // Scope::find unwraps transparent enum members, while members() yields their wrappers.
+        const auto& member = entry.kind == SymbolKind::TransparentMember ?
+            entry.as<TransparentMemberSymbol>().wrapped : entry;
+        if (member.kind == SymbolKind::Parameter &&
+            (selection == PackageSelection::All || selection == PackageSelection::Parameter)) {
             const auto& value = member.as<ParameterSymbol>().getValue();
             snapshot.parameters.push_back(NativePackageValue{rustString(member.name),
                 appendValue(value, snapshot.values)});
         }
-        else if (member.kind == SymbolKind::TypeAlias) {
+        else if (member.kind == SymbolKind::EnumValue &&
+                 (selection == PackageSelection::All || selection == PackageSelection::Enumerator)) {
+            const auto& value = member.as<EnumValueSymbol>().getValue();
+            if (!value.isInteger())
+                throw Unsupported("Enum value is not an integer");
+            snapshot.enumerators.push_back(NativeVariant{rustString(member.name),
+                                                         snapshotInteger(value.integer())});
+        }
+        else if (member.kind == SymbolKind::TypeAlias &&
+                 (selection == PackageSelection::All || selection == PackageSelection::TypeAlias)) {
             NativePackageType type{};
             type.name = rustString(member.name);
             try {
@@ -767,9 +781,7 @@ static PackageSnapshot readPackage(const NativeCompilation& owner, const Package
         for (const auto& member : package.members()) append(member);
     }
     else if (!name.empty()) {
-        const auto* member = package.find(name);
-        const auto kind = selection == PackageSelection::Parameter ? SymbolKind::Parameter : SymbolKind::TypeAlias;
-        if (member && member->kind == kind) append(*member);
+        if (const auto* member = package.find(name)) append(*member);
     }
     return snapshot;
 }

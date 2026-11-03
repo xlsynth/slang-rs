@@ -55,10 +55,12 @@ Use `Source::file("top.sv")` to read an existing file.
 
 ## Packages and types
 
-Open a package with `Compilation::package` and use the `PackageLookup` trait to read one value parameter, localparam, or typedef. Slang resolves the member and its dependencies without walking unrelated declarations. A view borrows its compilation. Use `view.snapshot()?` to retain all supported members independently of the compilation, or `compilation.packages()?` to snapshot every package. Both a view and a snapshot implement the same lookup trait.
+Open a package with `Compilation::package` and use the `PackageLookup` trait to read one value parameter, localparam, enum constant, or typedef. Slang resolves the member and its dependencies without walking unrelated declarations. A view borrows its compilation. Use `view.snapshot()?` to retain all supported members independently of the compilation, or `compilation.packages()?` to snapshot every package. Both a view and a snapshot implement the same lookup trait.
 
 Integers and enum values preserve width and signedness.
 Use `TryFrom` and `TryInto` for checked conversions to Rust integer types.
+`Package.enumerators` maps the names of enum constants declared directly in the
+package to `IntegerValue`s.
 Typedefs are in `Package.types`:
 
 ```rust

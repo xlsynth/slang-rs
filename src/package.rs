@@ -2,7 +2,7 @@
 
 use std::{borrow::Cow, collections::HashMap, ops::Index};
 
-use crate::{ConstantValue, Error, Type};
+use crate::{ConstantValue, Error, IntegerValue, Type};
 
 /// Read a direct member of a live package view or an owned package snapshot.
 /// A lookup returns `None` if the package has no member of the requested kind
@@ -12,11 +12,14 @@ pub trait PackageLookup {
     /// Read the evaluated value of a parameter or localparam.
     fn parameter(&self, name: &str) -> Result<Option<Cow<'_, ConstantValue>>, Error>;
 
+    /// Read an enum constant declared directly in this package.
+    fn enumerator(&self, name: &str) -> Result<Option<Cow<'_, IntegerValue>>, Error>;
+
     /// Resolve a typedef declared in this package.
     fn ty(&self, name: &str) -> Result<Option<Cow<'_, Type>>, Error>;
 }
 
-/// Evaluated value parameters, localparams, and resolved typedefs in a package.
+/// Evaluated parameters, localparams, enum constants, and resolved typedefs in a package.
 ///
 /// ```
 /// use slang_rs::{Compilation, SlangConfig, Source};
@@ -34,6 +37,9 @@ pub struct Package {
     pub name: String,
     /// Value parameters and localparams. Type aliases are available in `types`.
     pub parameters: HashMap<String, ConstantValue>,
+    /// Enum constants declared directly in this package, keyed by name.
+    /// Imported and re-exported enumerators are not included.
+    pub enumerators: HashMap<String, IntegerValue>,
     /// Resolved typedefs, keyed by their name within this package.
     ///
     /// Each unsupported type carries its own diagnostic, so it does not prevent
@@ -45,6 +51,10 @@ pub struct Package {
 impl PackageLookup for Package {
     fn parameter(&self, name: &str) -> Result<Option<Cow<'_, ConstantValue>>, Error> {
         Ok(self.parameters.get(name).map(Cow::Borrowed))
+    }
+
+    fn enumerator(&self, name: &str) -> Result<Option<Cow<'_, IntegerValue>>, Error> {
+        Ok(self.enumerators.get(name).map(Cow::Borrowed))
     }
 
     fn ty(&self, name: &str) -> Result<Option<Cow<'_, Type>>, Error> {
