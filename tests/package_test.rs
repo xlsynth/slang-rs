@@ -106,22 +106,20 @@ mod tests {
             ..Default::default()
         })
         .unwrap();
-        let b = compilation.package("b").unwrap().unwrap();
-        assert_eq!(
-            b.enumerator("B").unwrap().unwrap().as_ref(),
-            &integer(4, true, 14u8)
-        );
-        assert!(b.parameter("B").unwrap().is_none());
-        assert!(b.enumerator("foreign_t").unwrap().is_none());
-        assert!(
-            compilation
-                .package("only_alias")
-                .unwrap()
-                .unwrap()
-                .enumerator("B")
-                .unwrap()
-                .is_none()
-        );
+        let b = compilation.package("b").unwrap();
+        assert_eq!(b.enumerator("B").unwrap().as_ref(), &integer(4, true, 14u8));
+        assert!(matches!(
+            b.parameter("B"),
+            Err(slang_rs::LookupError::NotFound { .. })
+        ));
+        assert!(matches!(
+            b.enumerator("foreign_t"),
+            Err(slang_rs::LookupError::NotFound { .. })
+        ));
+        assert!(matches!(
+            compilation.package("only_alias").unwrap().enumerator("B"),
+            Err(slang_rs::LookupError::NotFound { .. })
+        ));
         let packages = compilation.packages().unwrap();
         assert_eq!(b.snapshot().unwrap(), packages["b"]);
         assert_eq!(packages["a"].enumerators["B"], integer(3, false, 1u8));
@@ -715,16 +713,30 @@ fn live_and_owned_lookups_have_the_same_contract() {
     use slang_rs::{Compilation, PackageLookup, SlangConfig, Source};
 
     fn check(pkg: &dyn PackageLookup) -> slang_rs::Error {
-        let width = pkg.parameter("WIDTH").unwrap().unwrap();
+        let width = pkg.parameter("WIDTH").unwrap();
         assert_eq!(usize::try_from(width.as_ref()).unwrap(), 12);
-        assert_eq!(pkg.ty("word_t").unwrap().unwrap().width().unwrap(), 12);
+        assert_eq!(pkg.ty("word_t").unwrap().width().unwrap(), 12);
         for name in ["missing", "word_t", ""] {
-            assert!(pkg.parameter(name).unwrap().is_none());
+            assert_eq!(
+                pkg.parameter(name).unwrap_err(),
+                slang_rs::LookupError::NotFound {
+                    kind: "parameter",
+                    name: format!("p::{name}")
+                }
+            );
         }
         for name in ["missing", "WIDTH", ""] {
-            assert!(pkg.ty(name).unwrap().is_none());
+            assert_eq!(
+                pkg.ty(name).unwrap_err(),
+                slang_rs::LookupError::NotFound {
+                    kind: "typedef",
+                    name: format!("p::{name}")
+                }
+            );
         }
-        let err = pkg.ty("unsupported_t").unwrap_err();
+        let slang_rs::LookupError::Extraction(err) = pkg.ty("unsupported_t").unwrap_err() else {
+            panic!("an unsupported typedef exists");
+        };
         assert!(
             err.diagnostics
                 .iter()
@@ -746,7 +758,7 @@ fn live_and_owned_lookups_have_the_same_contract() {
             ..Default::default()
         })
         .unwrap();
-        let view = compilation.package("p").unwrap().unwrap();
+        let view = compilation.package("p").unwrap();
         let error = check(&view);
         (view.snapshot().unwrap(), error)
     };
@@ -772,16 +784,20 @@ fn single_member_lookups_do_not_evaluate_broken_siblings() {
     // A native error poisons a compilation, so exercise each failing path independently.
     for full_snapshot in [false, true] {
         let compilation = Compilation::new(&config).unwrap();
-        let view = compilation.package("p").unwrap().unwrap();
+        let view = compilation.package("p").unwrap();
         assert_eq!(
-            usize::try_from(view.parameter("WIDTH").unwrap().unwrap().as_ref()).unwrap(),
+            usize::try_from(view.parameter("WIDTH").unwrap().as_ref()).unwrap(),
             7
         );
-        assert_eq!(view.ty("word_t").unwrap().unwrap().width().unwrap(), 7);
+        assert_eq!(view.ty("word_t").unwrap().width().unwrap(), 7);
         let err = if full_snapshot {
             view.snapshot().unwrap_err()
         } else {
-            view.parameter("BROKEN").unwrap_err()
+            let slang_rs::LookupError::Extraction(err) = view.parameter("BROKEN").unwrap_err()
+            else {
+                panic!("BROKEN exists but cannot be evaluated");
+            };
+            err
         };
         assert!(
             err.diagnostics

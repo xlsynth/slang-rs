@@ -11,9 +11,9 @@ use std::rc::Rc;
 
 use crate::{
     CheckLevel, ConstantValue, DiagnosticOptions, DiagnosticSeverity, Field, HierarchyMode,
-    Instance, IntegerValue, IntegralKind, LanguageVersion, Package, PackageLookup, Parameter, Port,
-    PortDir, PortList, Range, SlangConfig, Source, TimeScale, TimeScaleMagnitude, TimeScaleValue,
-    TimeUnit, Type, Variant, WarningPolicy,
+    Instance, IntegerValue, IntegralKind, LanguageVersion, LookupError, Package, PackageLookup,
+    Parameter, Port, PortDir, PortList, Range, SlangConfig, Source, TimeScale, TimeScaleMagnitude,
+    TimeScaleValue, TimeUnit, Type, Variant, WarningPolicy,
 };
 use num_bigint::BigUint;
 
@@ -672,11 +672,13 @@ impl Compilation {
     }
 
     /// Ports on one elaborated top, without inspecting other tops' ports.
-    pub fn ports_for(&self, top: &str) -> Result<Option<PortList>, Error> {
+    pub fn ports_for(&self, top: &str) -> Result<PortList, LookupError> {
         if top.is_empty() {
-            return Ok(None);
+            return Err(LookupError::not_found("top", top));
         }
-        Ok(self.selected_ports(top)?.remove(top))
+        self.selected_ports(top)?
+            .remove(top)
+            .ok_or_else(|| LookupError::not_found("top", top))
     }
 
     fn selected_ports(&self, top: &str) -> Result<HashMap<String, PortList>, Error> {
@@ -767,12 +769,14 @@ impl Compilation {
         self.selected_hierarchy("")
     }
 
-    /// The hierarchy rooted at one elaborated top, or None if it is absent.
-    pub fn hierarchy_for(&self, top: &str) -> Result<Option<Instance>, Error> {
+    /// The hierarchy rooted at one elaborated top.
+    pub fn hierarchy_for(&self, top: &str) -> Result<Instance, LookupError> {
         if top.is_empty() {
-            return Ok(None);
+            return Err(LookupError::not_found("top", top));
         }
-        Ok(self.selected_hierarchy(top)?.remove(top))
+        self.selected_hierarchy(top)?
+            .remove(top)
+            .ok_or_else(|| LookupError::not_found("top", top))
     }
 
     fn selected_hierarchy(&self, top: &str) -> Result<HashMap<String, Instance>, Error> {
@@ -830,13 +834,16 @@ impl Compilation {
     }
 
     /// Open a view without evaluating any members. Missing names and the built-in std
-    /// package return `None`. Use [`PackageView::snapshot`] to detach all members.
-    pub fn package(&self, name: &str) -> Result<Option<PackageView<'_>>, Error> {
+    /// package return [`LookupError::NotFound`]. Use [`PackageView::snapshot`] to detach all members.
+    pub fn package(&self, name: &str) -> Result<PackageView<'_>, LookupError> {
         let found = self.query(|c| ffi::compilation_has_package(c, name))?;
-        Ok(found.then(|| PackageView {
+        if !found {
+            return Err(LookupError::not_found("package", name));
+        }
+        Ok(PackageView {
             compilation: self,
             name: name.to_owned(),
-        }))
+        })
     }
 
     /// Snapshot every user package, including its value parameters, enum constants, and typedefs.
@@ -878,40 +885,40 @@ impl PackageView<'_> {
 }
 
 impl PackageLookup for PackageView<'_> {
-    fn parameter(&self, name: &str) -> Result<Option<Cow<'_, ConstantValue>>, Error> {
+    fn parameter(&self, name: &str) -> Result<Cow<'_, ConstantValue>, LookupError> {
         let snapshot = self.read(ffi::PackageSelection::Parameter, name)?;
-        snapshot
+        let parameter = snapshot
             .parameters
             .first()
-            .map(|p| convert_value(&snapshot.values, p.value, 0).map(Cow::Owned))
-            .transpose()
+            .ok_or_else(|| LookupError::not_found("parameter", format!("{}::{name}", self.name)))?;
+        Ok(Cow::Owned(convert_value(
+            &snapshot.values,
+            parameter.value,
+            0,
+        )?))
     }
 
-    fn enumerator(&self, name: &str) -> Result<Option<Cow<'_, IntegerValue>>, Error> {
+    fn enumerator(&self, name: &str) -> Result<Cow<'_, IntegerValue>, LookupError> {
         let snapshot = self.read(ffi::PackageSelection::Enumerator, name)?;
-        Ok(snapshot
-            .enumerators
-            .first()
-            .map(|v| Cow::Owned(convert_integer(&v.value))))
+        let enumerator = snapshot.enumerators.first().ok_or_else(|| {
+            LookupError::not_found("enumerator", format!("{}::{name}", self.name))
+        })?;
+        Ok(Cow::Owned(convert_integer(&enumerator.value)))
     }
 
-    fn ty(&self, name: &str) -> Result<Option<Cow<'_, Type>>, Error> {
+    fn ty(&self, name: &str) -> Result<Cow<'_, Type>, LookupError> {
         let snapshot = self.read(ffi::PackageSelection::TypeAlias, name)?;
-        snapshot
-            .aliases
-            .into_iter()
-            .next()
-            .map(|alias| {
-                convert_alias(
-                    &self.name,
-                    &alias.name,
-                    alias.ty,
-                    alias.diagnostics,
-                    &snapshot.types,
-                )
-                .map(Cow::Owned)
-            })
-            .transpose()
+        let alias =
+            snapshot.aliases.into_iter().next().ok_or_else(|| {
+                LookupError::not_found("typedef", format!("{}::{name}", self.name))
+            })?;
+        Ok(Cow::Owned(convert_alias(
+            &self.name,
+            &alias.name,
+            alias.ty,
+            alias.diagnostics,
+            &snapshot.types,
+        )?))
     }
 }
 

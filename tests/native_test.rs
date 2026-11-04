@@ -86,15 +86,22 @@ fn selective_queries_snapshot_only_the_named_declaration() {
     assert_eq!(tops, ["bad", "good"]);
     assert!(compilation.ports().is_err());
     assert_eq!(
-        compilation.ports_for("good").unwrap().unwrap()[0]
+        compilation.ports_for("good").unwrap()[0]
             .ty
             .width()
             .unwrap(),
         4
     );
-    assert!(compilation.ports_for("child").unwrap().is_none());
+    for name in ["child", ""] {
+        let missing = slang_rs::LookupError::NotFound {
+            kind: "top",
+            name: name.into(),
+        };
+        assert_eq!(compilation.ports_for(name).unwrap_err(), missing);
+        assert_eq!(compilation.hierarchy_for(name).unwrap_err(), missing);
+    }
     assert_eq!(
-        compilation.hierarchy_for("good").unwrap().unwrap(),
+        compilation.hierarchy_for("good").unwrap(),
         compilation.hierarchy().unwrap()["good"]
     );
     let mut names = compilation.package_names().unwrap();
@@ -103,16 +110,18 @@ fn selective_queries_snapshot_only_the_named_declaration() {
     let packages = compilation.packages().unwrap();
     for name in names {
         assert_eq!(
-            compilation
-                .package(&name)
-                .unwrap()
-                .map(|view| view.snapshot().unwrap())
-                .as_ref(),
-            packages.get(&name)
+            compilation.package(&name).unwrap().snapshot().unwrap(),
+            packages[&name]
         );
     }
     for name in ["missing", "std", ""] {
-        assert!(compilation.package(name).unwrap().is_none());
+        assert_eq!(
+            compilation.package(name).unwrap_err(),
+            slang_rs::LookupError::NotFound {
+                kind: "package",
+                name: name.into()
+            }
+        );
     }
 }
 

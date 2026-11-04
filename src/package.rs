@@ -2,21 +2,20 @@
 
 use std::{borrow::Cow, collections::HashMap, ops::Index};
 
-use crate::{ConstantValue, Error, IntegerValue, Type};
+use crate::{ConstantValue, Error, IntegerValue, LookupError, Type};
 
 /// Read a direct member of a live package view or an owned package snapshot.
-/// A lookup returns `None` if the package has no member of the requested kind
-/// with that name. An unrepresentable type or evaluation error is an `Err`.
+/// A missing member of the requested kind returns [`LookupError::NotFound`].
 /// Live lookups return owned data; snapshot lookups borrow the stored data.
 pub trait PackageLookup {
     /// Read the evaluated value of a parameter or localparam.
-    fn parameter(&self, name: &str) -> Result<Option<Cow<'_, ConstantValue>>, Error>;
+    fn parameter(&self, name: &str) -> Result<Cow<'_, ConstantValue>, LookupError>;
 
     /// Read an enum constant declared directly in this package.
-    fn enumerator(&self, name: &str) -> Result<Option<Cow<'_, IntegerValue>>, Error>;
+    fn enumerator(&self, name: &str) -> Result<Cow<'_, IntegerValue>, LookupError>;
 
     /// Resolve a typedef declared in this package.
-    fn ty(&self, name: &str) -> Result<Option<Cow<'_, Type>>, Error>;
+    fn ty(&self, name: &str) -> Result<Cow<'_, Type>, LookupError>;
 }
 
 /// Evaluated parameters, localparams, enum constants, and resolved typedefs in a package.
@@ -49,19 +48,27 @@ pub struct Package {
 }
 
 impl PackageLookup for Package {
-    fn parameter(&self, name: &str) -> Result<Option<Cow<'_, ConstantValue>>, Error> {
-        Ok(self.parameters.get(name).map(Cow::Borrowed))
+    fn parameter(&self, name: &str) -> Result<Cow<'_, ConstantValue>, LookupError> {
+        self.parameters
+            .get(name)
+            .map(Cow::Borrowed)
+            .ok_or_else(|| LookupError::not_found("parameter", format!("{}::{name}", self.name)))
     }
 
-    fn enumerator(&self, name: &str) -> Result<Option<Cow<'_, IntegerValue>>, Error> {
-        Ok(self.enumerators.get(name).map(Cow::Borrowed))
+    fn enumerator(&self, name: &str) -> Result<Cow<'_, IntegerValue>, LookupError> {
+        self.enumerators
+            .get(name)
+            .map(Cow::Borrowed)
+            .ok_or_else(|| LookupError::not_found("enumerator", format!("{}::{name}", self.name)))
     }
 
-    fn ty(&self, name: &str) -> Result<Option<Cow<'_, Type>>, Error> {
+    fn ty(&self, name: &str) -> Result<Cow<'_, Type>, LookupError> {
         self.types
             .get(name)
-            .map(|ty| ty.as_ref().map(Cow::Borrowed).map_err(Clone::clone))
-            .transpose()
+            .ok_or_else(|| LookupError::not_found("typedef", format!("{}::{name}", self.name)))?
+            .as_ref()
+            .map(Cow::Borrowed)
+            .map_err(|error| error.clone().into())
     }
 }
 

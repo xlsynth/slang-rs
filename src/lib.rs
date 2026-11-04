@@ -3,6 +3,9 @@
 mod native;
 pub use native::{Compilation, Diagnostic, Error, SourceLocation};
 
+mod lookup;
+pub use lookup::LookupError;
+
 mod config;
 pub use config::{
     CheckLevel, DiagnosticOptions, DiagnosticOverride, DiagnosticSeverity, HierarchyMode,

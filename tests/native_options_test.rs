@@ -42,20 +42,10 @@ fn parse_mode_defers_semantic_errors_until_a_query_needs_the_bad_declaration() {
             .iter()
             .any(|name| name == "bad")
     );
-    let good = compilation
-        .package("good")
-        .unwrap()
-        .unwrap()
-        .snapshot()
-        .unwrap();
+    let good = compilation.package("good").unwrap().snapshot().unwrap();
     assert_eq!(i32::try_from(&good.parameters["WIDTH"]).unwrap(), 8);
 
-    let error = compilation
-        .package("bad")
-        .unwrap()
-        .unwrap()
-        .snapshot()
-        .unwrap_err();
+    let error = compilation.package("bad").unwrap().snapshot().unwrap_err();
     let missing = error
         .diagnostics
         .iter()
@@ -69,7 +59,10 @@ fn parse_mode_defers_semantic_errors_until_a_query_needs_the_bad_declaration() {
             .file
             .ends_with("sizes.sv")
     );
-    assert_eq!(compilation.package("bad").unwrap_err(), error);
+    assert_eq!(
+        compilation.package("bad").unwrap_err(),
+        slang_rs::LookupError::Extraction(error.clone())
+    );
 
     for check_level in [CheckLevel::Semantic, CheckLevel::Analysis] {
         let error = Compilation::new(&SlangConfig {

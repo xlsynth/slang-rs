@@ -78,10 +78,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
     let compilation = Compilation::new(&config)?;
-    let pkg = compilation.package("my_pkg")?.unwrap();
-    let count = u64::try_from(pkg.parameter("COUNT")?.unwrap().as_ref())?;
-    let wide: num_bigint::BigInt = pkg.parameter("WIDE")?.unwrap().as_ref().try_into()?;
-    let word_type = pkg.ty("word_t")?.unwrap();
+    let pkg = compilation.package("my_pkg")?;
+    let count = u64::try_from(pkg.parameter("COUNT")?.as_ref())?;
+    let wide: num_bigint::BigInt = pkg.parameter("WIDE")?.as_ref().try_into()?;
+    let word_type = pkg.ty("word_t")?;
     assert_eq!(count, 42);
     assert_eq!(wide, num_bigint::BigInt::from(1u8) << 64);
     assert_eq!(word_type.width()?, 16);
