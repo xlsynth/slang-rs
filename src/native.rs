@@ -596,8 +596,9 @@ impl fmt::Debug for Compilation {
 }
 
 impl Compilation {
-    /// Parse the sources and check syntax. By default, queries elaborate what they need.
-    /// Select [`CheckLevel::Semantic`] or [`CheckLevel::Analysis`] for eager checking.
+    /// Compile the sources at the configured check level. By default, Slang elaborates
+    /// the design and runs its analysis passes. Select [`CheckLevel::Parse`] to defer
+    /// elaboration until queries need it.
     /// A query that uncovers a compiler error returns semantic diagnostics for the design;
     /// subsequent queries return the same error.
     pub fn new(config: &SlangConfig<'_>) -> Result<Self, Error> {

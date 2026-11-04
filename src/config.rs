@@ -94,11 +94,11 @@ pub struct TranslateOff<'a> {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum CheckLevel {
     /// Check preprocessing and syntax; elaborate declarations as queries request them.
-    #[default]
     Parse,
     /// Also elaborate the whole design to report semantic diagnostics.
     Semantic,
     /// Also run Slang's analysis passes, including driver checks.
+    #[default]
     Analysis,
 }
 
@@ -205,7 +205,7 @@ pub struct SlangConfig<'a> {
     /// Let library units inherit macros from regular sources in `single_unit`
     /// mode. Library units otherwise have independent macro state.
     pub libraries_inherit_macros: bool,
-    /// Checks to run at construction. Defaults to [`CheckLevel::Parse`].
+    /// Checks to run at construction. Defaults to [`CheckLevel::Analysis`].
     pub check_level: CheckLevel,
     /// Lint inputs without automatic top-level instantiation. This mode always uses
     /// [`CheckLevel::Semantic`]; explicitly selected `tops` are still elaborated.

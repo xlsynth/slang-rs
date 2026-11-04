@@ -21,7 +21,7 @@ const REDEFINED_MACRO: Source<'static> = Source::text(
 );
 
 #[test]
-fn imports_defer_semantic_errors_until_a_query_needs_the_bad_declaration() {
+fn parse_mode_defers_semantic_errors_until_a_query_needs_the_bad_declaration() {
     let sources = [Source::named_text(
         "sizes.sv",
         "
@@ -31,6 +31,7 @@ fn imports_defer_semantic_errors_until_a_query_needs_the_bad_declaration() {
     )];
     let config = SlangConfig {
         sources: &sources,
+        check_level: CheckLevel::Parse,
         ..Default::default()
     };
     let compilation = Compilation::new(&config).unwrap();
@@ -81,6 +82,18 @@ fn imports_defer_semantic_errors_until_a_query_needs_the_bad_declaration() {
 }
 
 #[test]
+fn default_checks_reject_an_out_of_bounds_package_index() {
+    let error = Compilation::new(&SlangConfig {
+        sources: &[Source::text(
+            "package p; localparam logic [1:0] V = 2'b01; localparam logic X = V[7]; endpackage",
+        )],
+        ..Default::default()
+    })
+    .unwrap_err();
+    assert!(error.diagnostics.iter().any(|d| d.code == "IndexOOB"));
+}
+
+#[test]
 fn analysis_diagnostics_respect_structured_warning_policy() {
     let overrides = [DiagnosticOverride {
         name: "multiple-always-assigns",
@@ -106,7 +119,6 @@ fn analysis_diagnostics_respect_structured_warning_policy() {
 
     let baseline_error = Compilation::new(&SlangConfig {
         sources: &[MULTIPLE_DRIVERS],
-        check_level: CheckLevel::Analysis,
         diagnostics: DiagnosticOptions {
             warnings: WarningPolicy::None,
             ..Default::default()

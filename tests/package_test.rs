@@ -755,7 +755,7 @@ fn live_and_owned_lookups_have_the_same_contract() {
 
 #[test]
 fn single_member_lookups_do_not_evaluate_broken_siblings() {
-    use slang_rs::{Compilation, PackageLookup, SlangConfig, Source};
+    use slang_rs::{CheckLevel, Compilation, PackageLookup, SlangConfig, Source};
     let sources = [Source::text(
         "package p;
         localparam int BASE = 6, WIDTH = BASE + 1;
@@ -765,6 +765,7 @@ fn single_member_lookups_do_not_evaluate_broken_siblings() {
     )];
     let config = SlangConfig {
         sources: &sources,
+        check_level: CheckLevel::Parse,
         ..Default::default()
     };
 

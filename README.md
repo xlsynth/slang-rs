@@ -55,7 +55,7 @@ Use `Source::file("top.sv")` to read an existing file.
 
 ## Packages and types
 
-Open a package with `Compilation::package` and use the `PackageLookup` trait to read one value parameter, localparam, enum constant, or typedef. Slang resolves the member and its dependencies without walking unrelated declarations. A view borrows its compilation. Use `view.snapshot()?` to retain all supported members independently of the compilation, or `compilation.packages()?` to snapshot every package. Both a view and a snapshot implement the same lookup trait.
+Open a package with `Compilation::package` and use the `PackageLookup` trait to read one value parameter, localparam, enum constant, or typedef. Each lookup copies only the requested member into Rust. With `CheckLevel::Parse`, Slang also defers elaboration until a query needs it. A view borrows its compilation. Use `view.snapshot()?` to retain all supported members independently of the compilation, or `compilation.packages()?` to snapshot every package. Both a view and a snapshot implement the same lookup trait.
 
 Integers and enum values preserve width and signedness.
 Use `TryFrom` and `TryInto` for checked conversions to Rust integer types.
@@ -141,9 +141,9 @@ definitions in that order.
 
 Use `check_level` to choose how much to check at construction:
 
-- `CheckLevel::Parse` (default) checks preprocessing and syntax. Queries elaborate the declarations they need and report errors they encounter.
+- `CheckLevel::Parse` checks preprocessing and syntax. Queries elaborate the declarations they need, but may return a value without reporting a semantic diagnostic such as an out-of-bounds index.
 - `CheckLevel::Semantic` also elaborates the whole design, so errors in declarations you never query are reported up front.
-- `CheckLevel::Analysis` adds Slang's analysis passes, such as multiple-driver checks.
+- `CheckLevel::Analysis` (default) adds Slang's analysis passes, such as multiple-driver checks.
 
 Warning settings control severity at each level. Lint-only mode always uses semantic checking and skips automatic top-level instantiation.
 
