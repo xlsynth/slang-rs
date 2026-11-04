@@ -2,8 +2,8 @@
 
 use slang_rs::{
     CheckLevel, Compilation, ConstantValue, DiagnosticOptions, DiagnosticOverride,
-    DiagnosticSeverity, LanguageVersion, SlangConfig, Source, TimeScale, TimeScaleMagnitude,
-    TimeScaleValue, TimeUnit, TranslateOff, WarningPolicy,
+    DiagnosticSeverity, HierarchyMode, LanguageVersion, SlangConfig, Source, TimeScale,
+    TimeScaleMagnitude, TimeScaleValue, TimeUnit, TranslateOff, WarningPolicy,
 };
 use std::num::NonZeroU32;
 
@@ -101,6 +101,8 @@ fn analysis_diagnostics_respect_structured_warning_policy() {
     }];
     let error = Compilation::new(&SlangConfig {
         sources: &[MULTIPLE_DRIVERS],
+        tops: &["top"],
+        hierarchy_mode: HierarchyMode::ExplicitTopsOnly,
         check_level: CheckLevel::Analysis,
         diagnostics: DiagnosticOptions {
             overrides: &overrides,
@@ -454,39 +456,46 @@ fn missing_source_returns_a_contextual_error() {
 }
 
 #[test]
-fn lint_only_does_not_automatically_instantiate_modules() {
+fn explicit_tops_only_skips_inference_and_respects_the_check_level() {
     let sources = [Source::text(
-        "module recursive(input logic [3:0] data);
-                 recursive child(.data(data));
-               endmodule\n",
+        "module recursive; recursive child(); endmodule",
     )];
-    let mut config = SlangConfig {
+    let config = SlangConfig {
         sources: &sources,
-        tops: &["recursive"],
-        check_level: CheckLevel::Semantic,
-        num_threads: Some(NonZeroU32::new(1).unwrap()),
+        hierarchy_mode: HierarchyMode::ExplicitTopsOnly,
+        num_threads: NonZeroU32::new(1),
         ..Default::default()
     };
-    let error = Compilation::new(&config).unwrap_err();
+    let library = Compilation::new(&config).unwrap();
+    assert_eq!(library.modules().unwrap(), ["recursive"]);
+    assert!(library.top_names().unwrap().is_empty());
+    assert!(
+        !library
+            .diagnostics()
+            .iter()
+            .any(|d| d.code == "NoTopModules")
+    );
+
+    let named_top = SlangConfig {
+        tops: &["recursive"],
+        ..config
+    };
+    Compilation::new(&SlangConfig {
+        check_level: CheckLevel::Parse,
+        ..named_top
+    })
+    .unwrap();
+    let error = Compilation::new(&SlangConfig {
+        check_level: CheckLevel::Semantic,
+        ..named_top
+    })
+    .unwrap_err();
     assert!(
         error
             .diagnostics
             .iter()
-            .any(|diagnostic| { diagnostic.code == "InfinitelyRecursiveHierarchy" })
+            .any(|d| d.code == "InfinitelyRecursiveHierarchy")
     );
-    config.check_level = CheckLevel::Parse;
-    config.lint_only = true;
-    let error = Compilation::new(&config).unwrap_err();
-    assert!(
-        error
-            .diagnostics
-            .iter()
-            .any(|diagnostic| { diagnostic.code == "InfinitelyRecursiveHierarchy" })
-    );
-    config.tops = &[];
-    let compilation = Compilation::new(&config).unwrap();
-    assert_eq!(compilation.modules().unwrap(), ["recursive"]);
-    assert!(compilation.ports().unwrap().is_empty());
 }
 
 #[test]

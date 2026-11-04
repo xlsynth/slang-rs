@@ -145,7 +145,9 @@ Use `check_level` to choose how much to check at construction:
 - `CheckLevel::Semantic` also elaborates the whole design, so errors in declarations you never query are reported up front.
 - `CheckLevel::Analysis` (default) adds Slang's analysis passes, such as multiple-driver checks.
 
-Warning settings control severity at each level. Lint-only mode always uses semantic checking and skips automatic top-level instantiation.
+Warning settings control severity at each level.
+
+`hierarchy_mode` defaults to `InferTops`: Slang infers roots when `tops` is empty. `ExplicitTopsOnly` uses only named roots and relaxes checks that assume a complete hierarchy.
 
 Diagnostics are collected without printing. Use `Compilation::diagnostics()`
 to inspect warnings; failures carry diagnostics in `Error`. See the

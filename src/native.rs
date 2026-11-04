@@ -10,10 +10,10 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 use crate::{
-    CheckLevel, ConstantValue, DiagnosticOptions, DiagnosticSeverity, Field, Instance,
-    IntegerValue, IntegralKind, LanguageVersion, Package, PackageLookup, Parameter, Port, PortDir,
-    PortList, Range, SlangConfig, Source, TimeScale, TimeScaleMagnitude, TimeScaleValue, TimeUnit,
-    Type, Variant, WarningPolicy,
+    CheckLevel, ConstantValue, DiagnosticOptions, DiagnosticSeverity, Field, HierarchyMode,
+    Instance, IntegerValue, IntegralKind, LanguageVersion, Package, PackageLookup, Parameter, Port,
+    PortDir, PortList, Range, SlangConfig, Source, TimeScale, TimeScaleMagnitude, TimeScaleValue,
+    TimeUnit, Type, Variant, WarningPolicy,
 };
 use num_bigint::BigUint;
 
@@ -111,7 +111,7 @@ mod ffi {
         single_unit: bool,
         libraries_inherit_macros: bool,
         check_level: NativeCheckLevel,
-        lint_only: bool,
+        explicit_tops_only: bool,
         relax_enum_conversions: bool,
         allow_use_before_declare: bool,
         allow_toplevel_interface_ports: bool,
@@ -465,7 +465,7 @@ impl From<&SlangConfig<'_>> for ffi::NativeConfig {
             single_unit: config.single_unit,
             libraries_inherit_macros: config.libraries_inherit_macros,
             check_level: config.check_level.into(),
-            lint_only: config.lint_only,
+            explicit_tops_only: config.hierarchy_mode == HierarchyMode::ExplicitTopsOnly,
             relax_enum_conversions: config.relax_enum_conversions,
             allow_use_before_declare: config.allow_use_before_declare,
             allow_toplevel_interface_ports: config.allow_toplevel_interface_ports,

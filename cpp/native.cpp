@@ -497,7 +497,7 @@ std::unique_ptr<NativeCompilation> create_compilation(NativeConfig input) {
     driver::SourceOptions sources{};
     if (config.num_threads != 0) sources.numThreads = config.num_threads;
     sources.singleUnit = config.single_unit;
-    sources.onlyLint = config.lint_only;
+    sources.onlyLint = config.explicit_tops_only;
     sources.librariesInheritMacros = config.libraries_inherit_macros;
 
     parsing::PreprocessorOptions preprocessor;
@@ -534,7 +534,7 @@ std::unique_ptr<NativeCompilation> create_compilation(NativeConfig input) {
     compilation.languageVersion = version;
     compilation.flags = CompilationFlags::None;
     if (config.ignore_unknown_modules) compilation.flags |= CompilationFlags::IgnoreUnknownModules;
-    if (config.lint_only) compilation.flags |= CompilationFlags::LintMode;
+    if (config.explicit_tops_only) compilation.flags |= CompilationFlags::LintMode;
     if (config.relax_enum_conversions) compilation.flags |= CompilationFlags::RelaxEnumConversions;
     if (config.allow_use_before_declare) compilation.flags |= CompilationFlags::AllowUseBeforeDeclare;
     if (config.allow_toplevel_interface_ports)
@@ -611,12 +611,11 @@ std::unique_ptr<NativeCompilation> create_compilation(NativeConfig input) {
     defaultLibrary->isDefault = true;
     state.compilation = std::make_unique<Compilation>(options, defaultLibrary);
     for (auto& tree : state.syntaxTrees) state.compilation->addSyntaxTree(tree);
-    const auto checkLevel = config.lint_only ? NativeCheckLevel::Semantic : config.check_level;
-    if (checkLevel == NativeCheckLevel::Parse)
+    if (config.check_level == NativeCheckLevel::Parse)
         engine.issue(state.compilation->getParseDiagnostics());
     else
         engine.issue(state.compilation->getAllDiagnostics());
-    if (checkLevel == NativeCheckLevel::Analysis) {
+    if (config.check_level == NativeCheckLevel::Analysis) {
         state.compilation->freeze();
         analysis::AnalysisOptions analysisOptions;
         analysisOptions.flags |= analysis::AnalysisFlags::CheckUnused |
