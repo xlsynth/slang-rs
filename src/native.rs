@@ -2,15 +2,18 @@
 
 //! Owned snapshots from an in-process Slang compilation.
 
+use std::borrow::Cow;
+use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
 use crate::{
-    ConstantValue, DiagnosticOptions, DiagnosticSeverity, Field, Instance, IntegerValue,
-    IntegralKind, LanguageVersion, Package, Parameter, Port, PortDir, PortList, Range, SlangConfig,
-    Source, TimeScale, TimeScaleMagnitude, TimeScaleValue, TimeUnit, Type, Variant, WarningPolicy,
+    CheckLevel, ConstantValue, DiagnosticOptions, DiagnosticSeverity, Field, HierarchyMode,
+    Instance, IntegerValue, IntegralKind, LanguageVersion, LookupError, Package, PackageLookup,
+    Parameter, Port, PortDir, PortList, Range, SlangConfig, Source, TimeScale, TimeScaleMagnitude,
+    TimeScaleValue, TimeUnit, Type, Variant, WarningPolicy,
 };
 use num_bigint::BigUint;
 
@@ -61,6 +64,11 @@ mod ffi {
         start: String,
         end: String,
     }
+    enum NativeCheckLevel {
+        Parse,
+        Semantic,
+        Analysis,
+    }
     enum NativeWarningPolicy {
         Default,
         All,
@@ -102,8 +110,8 @@ mod ffi {
         language_version: NativeLanguageVersion,
         single_unit: bool,
         libraries_inherit_macros: bool,
-        analysis_enabled: bool,
-        lint_only: bool,
+        check_level: NativeCheckLevel,
+        explicit_tops_only: bool,
         relax_enum_conversions: bool,
         allow_use_before_declare: bool,
         allow_toplevel_interface_ports: bool,
@@ -236,16 +244,19 @@ mod ffi {
         ty: usize,
         diagnostics: Vec<NativeDiagnostic>,
     }
-    struct NativePackage {
-        name: String,
-        values: Vec<NativePackageValue>,
-        enumerators: Vec<NativeVariant>,
-        types: Vec<NativePackageType>,
+    enum PackageSelection {
+        All,
+        Parameter,
+        Enumerator,
+        TypeAlias,
     }
     struct PackageSnapshot {
+        name: String,
+        parameters: Vec<NativePackageValue>,
+        enumerators: Vec<NativeVariant>,
+        aliases: Vec<NativePackageType>,
         types: Vec<TypeNode>,
         values: Vec<ValueNode>,
-        packages: Vec<NativePackage>,
     }
 
     unsafe extern "C++" {
@@ -257,14 +268,30 @@ mod ffi {
         fn take_compilation_diagnostics(
             compilation: Pin<&mut NativeCompilation>,
         ) -> Result<Vec<NativeDiagnostic>>;
+        fn compilation_query_errors(
+            compilation: &NativeCompilation,
+        ) -> Result<Vec<NativeDiagnostic>>;
         fn compilation_interfaces(
             compilation: &NativeCompilation,
             parameters: bool,
             skip_unsupported: bool,
+            top: &str,
         ) -> Result<InterfaceSnapshot>;
         fn compilation_modules(compilation: &NativeCompilation) -> Result<Vec<String>>;
-        fn compilation_hierarchy(compilation: &NativeCompilation) -> Result<Vec<HierarchyNode>>;
-        fn compilation_packages(compilation: &NativeCompilation) -> Result<PackageSnapshot>;
+        fn compilation_top_names(compilation: &NativeCompilation) -> Result<Vec<String>>;
+        fn compilation_hierarchy(
+            compilation: &NativeCompilation,
+            top: &str,
+        ) -> Result<Vec<HierarchyNode>>;
+        fn compilation_package_names(compilation: &NativeCompilation) -> Result<Vec<String>>;
+        fn compilation_has_package(compilation: &NativeCompilation, name: &str) -> Result<bool>;
+        fn compilation_read_package(
+            compilation: &NativeCompilation,
+            name: &str,
+            selection: PackageSelection,
+            member: &str,
+        ) -> Result<PackageSnapshot>;
+        fn compilation_packages(compilation: &NativeCompilation) -> Result<Vec<PackageSnapshot>>;
     }
 }
 
@@ -315,6 +342,16 @@ impl From<TimeScale> for ffi::NativeTimeScale {
         Self {
             base: value.base.into(),
             precision: value.precision.into(),
+        }
+    }
+}
+
+impl From<CheckLevel> for ffi::NativeCheckLevel {
+    fn from(value: CheckLevel) -> Self {
+        match value {
+            CheckLevel::Parse => Self::Parse,
+            CheckLevel::Semantic => Self::Semantic,
+            CheckLevel::Analysis => Self::Analysis,
         }
     }
 }
@@ -427,8 +464,8 @@ impl From<&SlangConfig<'_>> for ffi::NativeConfig {
             language_version: config.language_version.into(),
             single_unit: config.single_unit,
             libraries_inherit_macros: config.libraries_inherit_macros,
-            analysis_enabled: config.analysis_enabled,
-            lint_only: config.lint_only,
+            check_level: config.check_level.into(),
+            explicit_tops_only: config.hierarchy_mode == HierarchyMode::ExplicitTopsOnly,
             relax_enum_conversions: config.relax_enum_conversions,
             allow_use_before_declare: config.allow_use_before_declare,
             allow_toplevel_interface_ports: config.allow_toplevel_interface_ports,
@@ -545,6 +582,7 @@ fn snapshot_error(message: impl Into<String>) -> Error {
 /// Slang may lazily populate internal caches while answering a query.
 pub struct Compilation {
     native: cxx::UniquePtr<ffi::NativeCompilation>,
+    query_error: OnceCell<Error>,
     diagnostics: Vec<Diagnostic>,
     skip_unsupported_ports: bool,
     skip_unsupported_parameters: bool,
@@ -558,8 +596,11 @@ impl fmt::Debug for Compilation {
 }
 
 impl Compilation {
-    /// Parse and elaborate the configured sources once using the linked Slang
-    /// library. Compiler diagnostics are returned as structured errors.
+    /// Compile the sources at the configured check level. By default, Slang elaborates
+    /// the design and runs its analysis passes. Select [`CheckLevel::Parse`] to defer
+    /// elaboration until queries need it.
+    /// A query that uncovers a compiler error returns semantic diagnostics for the design;
+    /// subsequent queries return the same error.
     pub fn new(config: &SlangConfig<'_>) -> Result<Self, Error> {
         let mut native = ffi::create_compilation(config.into())?;
         let valid = ffi::compilation_valid(&native);
@@ -575,6 +616,7 @@ impl Compilation {
         }
         Ok(Self {
             native,
+            query_error: OnceCell::new(),
             diagnostics,
             skip_unsupported_ports: config.skip_unsupported_ports,
             skip_unsupported_parameters: config.skip_unsupported_parameters,
@@ -588,7 +630,30 @@ impl Compilation {
             .expect("native compilation owner is non-null")
     }
 
-    /// Diagnostics produced during compilation, including nonfatal warnings.
+    /// Run a query and reject partial results if Slang recovered from a semantic error.
+    fn query<T>(
+        &self,
+        read: impl FnOnce(&ffi::NativeCompilation) -> Result<T, cxx::Exception>,
+    ) -> Result<T, Error> {
+        if let Some(error) = self.query_error.get() {
+            return Err(error.clone());
+        }
+        let result = read(self.inner());
+        let diagnostics = ffi::compilation_query_errors(self.inner())?;
+        if !diagnostics.is_empty() {
+            let error = Error {
+                message: "Slang elaboration failed".into(),
+                diagnostics: diagnostics
+                    .into_iter()
+                    .map(TryInto::try_into)
+                    .collect::<Result<_, _>>()?,
+            };
+            return Err(self.query_error.get_or_init(|| error).clone());
+        }
+        Ok(result?)
+    }
+
+    /// Diagnostics reported at construction, including nonfatal warnings.
     ///
     /// These are stable across design queries. Use `.to_vec()` to keep an
     /// owned copy after dropping the compilation.
@@ -603,7 +668,21 @@ impl Compilation {
     /// [`SlangConfig::skip_unsupported_ports`] is enabled.
     /// Skipping ports removes their entries and shifts subsequent indices.
     pub fn ports(&self) -> Result<HashMap<String, PortList>, Error> {
-        let snapshot = self.interfaces(false, self.skip_unsupported_ports)?;
+        self.selected_ports("")
+    }
+
+    /// Ports on one elaborated top, without inspecting other tops' ports.
+    pub fn ports_for(&self, top: &str) -> Result<PortList, LookupError> {
+        if top.is_empty() {
+            return Err(LookupError::not_found("top", top));
+        }
+        self.selected_ports(top)?
+            .remove(top)
+            .ok_or_else(|| LookupError::not_found("top", top))
+    }
+
+    fn selected_ports(&self, top: &str) -> Result<HashMap<String, PortList>, Error> {
+        let snapshot = self.interfaces(false, self.skip_unsupported_ports, top)?;
         let mut modules = HashMap::new();
         for module in snapshot.modules {
             let mut ports = Vec::new();
@@ -632,7 +711,7 @@ impl Compilation {
     /// Values and type parameters are not included. Unsupported types return
     /// an error unless [`SlangConfig::skip_unsupported_parameters`] is enabled.
     pub fn parameters(&self) -> Result<HashMap<String, Vec<Parameter>>, Error> {
-        let snapshot = self.interfaces(true, self.skip_unsupported_parameters)?;
+        let snapshot = self.interfaces(true, self.skip_unsupported_parameters, "")?;
         let mut modules = HashMap::new();
         for module in snapshot.modules {
             let parameters = module
@@ -656,8 +735,10 @@ impl Compilation {
         &self,
         parameters: bool,
         skip_unsupported: bool,
+        top: &str,
     ) -> Result<ffi::InterfaceSnapshot, Error> {
-        let snapshot = ffi::compilation_interfaces(self.inner(), parameters, skip_unsupported)?;
+        let snapshot =
+            self.query(|c| ffi::compilation_interfaces(c, parameters, skip_unsupported, top))?;
         if !snapshot.diagnostics.is_empty() {
             return Err(Error {
                 message: "Unsupported SystemVerilog interface".into(),
@@ -674,13 +755,32 @@ impl Compilation {
     /// Names of module definitions in the configured sources, including
     /// definitions that are not instantiated as a top-level design.
     pub fn modules(&self) -> Result<Vec<String>, Error> {
-        Ok(ffi::compilation_modules(self.inner())?)
+        self.query(ffi::compilation_modules)
+    }
+
+    /// Names of elaborated top instances, the keys used by the port and hierarchy queries.
+    pub fn top_names(&self) -> Result<Vec<String>, Error> {
+        self.query(ffi::compilation_top_names)
     }
 
     /// Elaborated hierarchy, including active generate scopes and unknown
     /// module placeholders when `ignore_unknown_modules` is enabled.
     pub fn hierarchy(&self) -> Result<HashMap<String, Instance>, Error> {
-        let nodes = ffi::compilation_hierarchy(self.inner())?;
+        self.selected_hierarchy("")
+    }
+
+    /// The hierarchy rooted at one elaborated top.
+    pub fn hierarchy_for(&self, top: &str) -> Result<Instance, LookupError> {
+        if top.is_empty() {
+            return Err(LookupError::not_found("top", top));
+        }
+        self.selected_hierarchy(top)?
+            .remove(top)
+            .ok_or_else(|| LookupError::not_found("top", top))
+    }
+
+    fn selected_hierarchy(&self, top: &str) -> Result<HashMap<String, Instance>, Error> {
+        let nodes = self.query(|c| ffi::compilation_hierarchy(c, top))?;
         let mut instances: Vec<_> = nodes
             .into_iter()
             .map(|node| {
@@ -728,64 +828,154 @@ impl Compilation {
         Ok(roots)
     }
 
-    /// Package value parameters, enum constants, and resolved typedefs.
-    ///
-    /// Constants are evaluated [`ConstantValue`] snapshots. Typedefs are
-    /// resolved [`Type`] values in [`Package::types`], with an individual error
-    /// for each unsupported type.
+    /// User-defined package names, without snapshotting any package members.
+    pub fn package_names(&self) -> Result<Vec<String>, Error> {
+        self.query(ffi::compilation_package_names)
+    }
+
+    /// Open a view without evaluating any members. Missing names and the built-in std
+    /// package return [`LookupError::NotFound`]. Use [`PackageView::snapshot`] to detach all members.
+    pub fn package(&self, name: &str) -> Result<PackageView<'_>, LookupError> {
+        let found = self.query(|c| ffi::compilation_has_package(c, name))?;
+        if !found {
+            return Err(LookupError::not_found("package", name));
+        }
+        Ok(PackageView {
+            compilation: self,
+            name: name.to_owned(),
+        })
+    }
+
+    /// Snapshot every user package, including its value parameters, enum constants, and typedefs.
     pub fn packages(&self) -> Result<HashMap<String, Package>, Error> {
-        let snapshot = ffi::compilation_packages(self.inner())?;
-        snapshot
-            .packages
+        self.query(ffi::compilation_packages)?
             .into_iter()
-            .map(|package| {
-                let parameters = package
-                    .values
-                    .into_iter()
-                    .map(|parameter| {
-                        Ok((
-                            parameter.name,
-                            convert_value(&snapshot.values, parameter.value, 0)?,
-                        ))
-                    })
-                    .collect::<Result<_, Error>>()?;
-                let types = package
-                    .types
-                    .into_iter()
-                    .map(|alias| {
-                        let ty = if alias.diagnostics.is_empty() {
-                            convert_type(&snapshot.types, alias.ty, 0)
-                        } else {
-                            Err(Error {
-                                message: format!(
-                                    "Unsupported package type {}::{}",
-                                    package.name, alias.name
-                                ),
-                                diagnostics: alias
-                                    .diagnostics
-                                    .into_iter()
-                                    .map(TryInto::try_into)
-                                    .collect::<Result<_, _>>()?,
-                            })
-                        };
-                        Ok((alias.name, ty))
-                    })
-                    .collect::<Result<_, Error>>()?;
-                Ok((
-                    package.name.clone(),
-                    Package {
-                        name: package.name,
-                        enumerators: package
-                            .enumerators
-                            .into_iter()
-                            .map(|v| (v.name, convert_integer(&v.value)))
-                            .collect(),
-                        parameters,
-                        types,
-                    },
-                ))
+            .map(|snapshot| {
+                let package = Package::try_from(snapshot)?;
+                Ok((package.name.clone(), package))
             })
             .collect()
+    }
+}
+
+/// A named package in a live compilation. [`PackageLookup`] resolves only the
+/// requested member and its dependencies. Keep the returned value for repeated use.
+#[derive(Debug)]
+pub struct PackageView<'a> {
+    compilation: &'a Compilation,
+    name: String,
+}
+
+impl PackageView<'_> {
+    /// Evaluate all value parameters, enum constants, and typedefs into an owned package that can
+    /// outlive the compilation or be sent to another thread.
+    pub fn snapshot(&self) -> Result<Package, Error> {
+        self.read(ffi::PackageSelection::All, "")?.try_into()
+    }
+
+    /// Request either one direct member or the complete package from Slang.
+    fn read(
+        &self,
+        selection: ffi::PackageSelection,
+        member: &str,
+    ) -> Result<ffi::PackageSnapshot, Error> {
+        self.compilation
+            .query(|c| ffi::compilation_read_package(c, &self.name, selection, member))
+    }
+}
+
+impl PackageLookup for PackageView<'_> {
+    fn parameter(&self, name: &str) -> Result<Cow<'_, ConstantValue>, LookupError> {
+        let snapshot = self.read(ffi::PackageSelection::Parameter, name)?;
+        let parameter = snapshot
+            .parameters
+            .first()
+            .ok_or_else(|| LookupError::not_found("parameter", format!("{}::{name}", self.name)))?;
+        Ok(Cow::Owned(convert_value(
+            &snapshot.values,
+            parameter.value,
+            0,
+        )?))
+    }
+
+    fn enumerator(&self, name: &str) -> Result<Cow<'_, IntegerValue>, LookupError> {
+        let snapshot = self.read(ffi::PackageSelection::Enumerator, name)?;
+        let enumerator = snapshot.enumerators.first().ok_or_else(|| {
+            LookupError::not_found("enumerator", format!("{}::{name}", self.name))
+        })?;
+        Ok(Cow::Owned(convert_integer(&enumerator.value)))
+    }
+
+    fn ty(&self, name: &str) -> Result<Cow<'_, Type>, LookupError> {
+        let snapshot = self.read(ffi::PackageSelection::TypeAlias, name)?;
+        let alias =
+            snapshot.aliases.into_iter().next().ok_or_else(|| {
+                LookupError::not_found("typedef", format!("{}::{name}", self.name))
+            })?;
+        Ok(Cow::Owned(convert_alias(
+            &self.name,
+            &alias.name,
+            alias.ty,
+            alias.diagnostics,
+            &snapshot.types,
+        )?))
+    }
+}
+
+impl TryFrom<ffi::PackageSnapshot> for Package {
+    type Error = Error;
+
+    fn try_from(snapshot: ffi::PackageSnapshot) -> Result<Self, Error> {
+        let parameters = snapshot
+            .parameters
+            .into_iter()
+            .map(|p| Ok((p.name, convert_value(&snapshot.values, p.value, 0)?)))
+            .collect::<Result<_, Error>>()?;
+        let types = snapshot
+            .aliases
+            .into_iter()
+            .map(|alias| {
+                let ty = convert_alias(
+                    &snapshot.name,
+                    &alias.name,
+                    alias.ty,
+                    alias.diagnostics,
+                    &snapshot.types,
+                );
+                (alias.name, ty)
+            })
+            .collect();
+        Ok(Self {
+            name: snapshot.name,
+            enumerators: snapshot
+                .enumerators
+                .into_iter()
+                .map(|v| (v.name, convert_integer(&v.value)))
+                .collect(),
+            parameters,
+            types,
+        })
+    }
+}
+
+/// Decode a native typedef, preserving diagnostics for types Rust cannot represent.
+fn convert_alias(
+    package: &str,
+    name: &str,
+    index: usize,
+    diagnostics: Vec<ffi::NativeDiagnostic>,
+    types: &[ffi::TypeNode],
+) -> Result<Type, Error> {
+    if diagnostics.is_empty() {
+        convert_type(types, index, 0)
+    } else {
+        Err(Error {
+            message: format!("Unsupported package type {package}::{name}"),
+            diagnostics: diagnostics
+                .into_iter()
+                .map(TryInto::try_into)
+                .collect::<Result<_, _>>()?,
+        })
     }
 }
 

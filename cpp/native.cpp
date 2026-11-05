@@ -497,7 +497,7 @@ std::unique_ptr<NativeCompilation> create_compilation(NativeConfig input) {
     driver::SourceOptions sources{};
     if (config.num_threads != 0) sources.numThreads = config.num_threads;
     sources.singleUnit = config.single_unit;
-    sources.onlyLint = config.lint_only;
+    sources.onlyLint = config.explicit_tops_only;
     sources.librariesInheritMacros = config.libraries_inherit_macros;
 
     parsing::PreprocessorOptions preprocessor;
@@ -534,7 +534,7 @@ std::unique_ptr<NativeCompilation> create_compilation(NativeConfig input) {
     compilation.languageVersion = version;
     compilation.flags = CompilationFlags::None;
     if (config.ignore_unknown_modules) compilation.flags |= CompilationFlags::IgnoreUnknownModules;
-    if (config.lint_only) compilation.flags |= CompilationFlags::LintMode;
+    if (config.explicit_tops_only) compilation.flags |= CompilationFlags::LintMode;
     if (config.relax_enum_conversions) compilation.flags |= CompilationFlags::RelaxEnumConversions;
     if (config.allow_use_before_declare) compilation.flags |= CompilationFlags::AllowUseBeforeDeclare;
     if (config.allow_toplevel_interface_ports)
@@ -611,8 +611,11 @@ std::unique_ptr<NativeCompilation> create_compilation(NativeConfig input) {
     defaultLibrary->isDefault = true;
     state.compilation = std::make_unique<Compilation>(options, defaultLibrary);
     for (auto& tree : state.syntaxTrees) state.compilation->addSyntaxTree(tree);
-    engine.issue(state.compilation->getAllDiagnostics());
-    if (config.analysis_enabled && !config.lint_only) {
+    if (config.check_level == NativeCheckLevel::Parse)
+        engine.issue(state.compilation->getParseDiagnostics());
+    else
+        engine.issue(state.compilation->getAllDiagnostics());
+    if (config.check_level == NativeCheckLevel::Analysis) {
         state.compilation->freeze();
         analysis::AnalysisOptions analysisOptions;
         analysisOptions.flags |= analysis::AnalysisFlags::CheckUnused |
@@ -634,8 +637,18 @@ rust::Vec<NativeDiagnostic> take_compilation_diagnostics(NativeCompilation& comp
     return std::move(compilation.impl->diagnostics->diagnostics);
 }
 
+// Slang 11 exposes its accumulated semantic diagnostics only after full elaboration.
+// Pay that cost on the error path so a recovered value or port width is never mistaken for valid.
+rust::Vec<NativeDiagnostic> compilation_query_errors(const NativeCompilation& owner) {
+    auto& state = *owner.impl;
+    if (state.compilation->isElaborated() || !state.compilation->hasIssuedErrors()) return {};
+    state.diagEngine.issue(state.compilation->getSemanticDiagnostics());
+    if (state.diagEngine.getNumErrors() == 0) return {};
+    return std::move(state.diagnostics->diagnostics);
+}
+
 InterfaceSnapshot compilation_interfaces(const NativeCompilation& owner, bool parameters,
-                                         bool skip_unsupported) {
+                                         bool skip_unsupported, rust::Str top) {
     InterfaceSnapshot snapshot{};
     DiagnosticCollector diagnostics;
     diagnostics.setEngine(owner.impl->diagEngine);
@@ -645,7 +658,7 @@ InterfaceSnapshot compilation_interfaces(const NativeCompilation& owner, bool pa
                                symbol.getHierarchicalPath() + ": " + error.what(), symbol.location);
     };
     for (const auto* instance : owner.impl->compilation->getRoot().topInstances) {
-        if (instance->name.empty()) continue;
+        if (instance->name.empty() || (!top.empty() && instance->name != std::string_view(top.data(), top.size()))) continue;
         NativeModule module{};
         module.name = rustString(instance->name);
         if (parameters) {
@@ -688,51 +701,104 @@ rust::Vec<rust::String> compilation_modules(const NativeCompilation& owner) {
     return modules;
 }
 
-rust::Vec<HierarchyNode> compilation_hierarchy(const NativeCompilation& owner) {
+rust::Vec<rust::String> compilation_top_names(const NativeCompilation& owner) {
+    rust::Vec<rust::String> names;
+    for (const auto* instance : owner.impl->compilation->getRoot().topInstances)
+        if (!instance->name.empty()) names.push_back(rustString(instance->name));
+    return names;
+}
+
+rust::Vec<HierarchyNode> compilation_hierarchy(const NativeCompilation& owner, rust::Str top) {
     rust::Vec<HierarchyNode> result;
     for (const auto* instance : owner.impl->compilation->getRoot().topInstances)
-        appendInstance(*instance, -1, result, 0);
+        if (top.empty() || instance->name == std::string_view(top.data(), top.size()))
+            appendInstance(*instance, -1, result, 0);
     return result;
 }
 
-PackageSnapshot compilation_packages(const NativeCompilation& owner) {
+rust::Vec<rust::String> compilation_package_names(const NativeCompilation& owner) {
+    rust::Vec<rust::String> names;
+    auto& compilation = *owner.impl->compilation;
+    for (const auto* package : compilation.getPackages())
+        if (package != &compilation.getStdPackage()) names.push_back(rustString(package->name));
+    return names;
+}
+
+// Locate a user package without visiting its declarations.
+static const PackageSymbol* findPackage(const NativeCompilation& owner, rust::Str name) {
+    if (name.empty()) return nullptr;
+    auto& compilation = *owner.impl->compilation;
+    auto* pkg = compilation.getPackage(std::string_view(name.data(), name.size()));
+    return pkg == &compilation.getStdPackage() ? nullptr : pkg;
+}
+
+bool compilation_has_package(const NativeCompilation& owner, rust::Str name) {
+    return findPackage(owner, name) != nullptr;
+}
+
+// A named lookup uses the scope's symbol index; only a full snapshot walks the members.
+static PackageSnapshot readPackage(const NativeCompilation& owner, const PackageSymbol& package,
+                                   PackageSelection selection, std::string_view name) {
     PackageSnapshot snapshot{};
-    for (const auto* package : owner.impl->compilation->getPackages()) {
-        if (package == &owner.impl->compilation->getStdPackage()) continue;
-        NativePackage output{};
-        output.name = rustString(package->name);
-        for (const auto& member : package->members()) {
-            if (member.kind == SymbolKind::Parameter) {
-                const auto& value = member.as<ParameterSymbol>().getValue();
-                output.values.push_back(NativePackageValue{rustString(member.name),
-                    appendValue(value, snapshot.values)});
-            }
-            else if (member.kind == SymbolKind::TransparentMember) {
-                const auto& wrapped = member.as<TransparentMemberSymbol>().wrapped;
-                if (wrapped.kind == SymbolKind::EnumValue) {
-                    const auto& value = wrapped.as<EnumValueSymbol>().getValue();
-                    output.enumerators.push_back(NativeVariant{rustString(member.name),
-                                                               snapshotInteger(value.integer())});
-                }
-            }
-            else if (member.kind == SymbolKind::TypeAlias) {
-                NativePackageType type{};
-                type.name = rustString(member.name);
-                try {
-                    type.ty = appendType(member.as<TypeAliasType>(), snapshot.types);
-                }
-                catch (const Unsupported& error) {
-                    DiagnosticCollector diagnostics;
-                    diagnostics.setEngine(owner.impl->diagEngine);
-                    diagnostics.append(NativeSeverity::Error, "UnsupportedPackageType",
-                                       member.getLexicalPath() + ": " + error.what(), member.location);
-                    type.diagnostics = std::move(diagnostics.diagnostics);
-                }
-                output.types.push_back(std::move(type));
-            }
+    snapshot.name = rustString(package.name);
+    auto append = [&](const Symbol& entry) {
+        // Scope::find unwraps transparent enum members, while members() yields their wrappers.
+        const auto& member = entry.kind == SymbolKind::TransparentMember ?
+            entry.as<TransparentMemberSymbol>().wrapped : entry;
+        if (member.kind == SymbolKind::Parameter &&
+            (selection == PackageSelection::All || selection == PackageSelection::Parameter)) {
+            const auto& value = member.as<ParameterSymbol>().getValue();
+            snapshot.parameters.push_back(NativePackageValue{rustString(member.name),
+                appendValue(value, snapshot.values)});
         }
-        snapshot.packages.push_back(std::move(output));
+        else if (member.kind == SymbolKind::EnumValue &&
+                 (selection == PackageSelection::All || selection == PackageSelection::Enumerator)) {
+            const auto& value = member.as<EnumValueSymbol>().getValue();
+            if (!value.isInteger())
+                throw Unsupported("Enum value is not an integer");
+            snapshot.enumerators.push_back(NativeVariant{rustString(member.name),
+                                                         snapshotInteger(value.integer())});
+        }
+        else if (member.kind == SymbolKind::TypeAlias &&
+                 (selection == PackageSelection::All || selection == PackageSelection::TypeAlias)) {
+            NativePackageType type{};
+            type.name = rustString(member.name);
+            try {
+                type.ty = appendType(member.as<TypeAliasType>(), snapshot.types);
+            }
+            catch (const Unsupported& error) {
+                DiagnosticCollector diagnostics;
+                diagnostics.setEngine(owner.impl->diagEngine);
+                diagnostics.append(NativeSeverity::Error, "UnsupportedPackageType",
+                                   member.getLexicalPath() + ": " + error.what(), member.location);
+                type.diagnostics = std::move(diagnostics.diagnostics);
+            }
+            snapshot.aliases.push_back(std::move(type));
+        }
+    };
+    if (selection == PackageSelection::All) {
+        for (const auto& member : package.members()) append(member);
+    }
+    else if (!name.empty()) {
+        if (const auto* member = package.find(name)) append(*member);
     }
     return snapshot;
+}
+
+PackageSnapshot compilation_read_package(const NativeCompilation& owner, rust::Str name,
+                                         PackageSelection selection, rust::Str member) {
+    const auto* pkg = findPackage(owner, name);
+    if (!pkg) throw std::runtime_error("Package view no longer refers to a user package");
+    return readPackage(owner, *pkg, selection, std::string_view(member.data(), member.size()));
+}
+
+rust::Vec<PackageSnapshot> compilation_packages(const NativeCompilation& owner) {
+    rust::Vec<PackageSnapshot> result;
+    auto& compilation = *owner.impl->compilation;
+    for (const auto* pkg : compilation.getPackages()) {
+        if (pkg != &compilation.getStdPackage())
+            result.push_back(readPackage(owner, *pkg, PackageSelection::All, {}));
+    }
+    return result;
 }
 } // namespace slang_rs

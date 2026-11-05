@@ -3,10 +3,14 @@
 mod native;
 pub use native::{Compilation, Diagnostic, Error, SourceLocation};
 
+mod lookup;
+pub use lookup::LookupError;
+
 mod config;
 pub use config::{
-    DiagnosticOptions, DiagnosticOverride, DiagnosticSeverity, LanguageVersion, SlangConfig,
-    Source, TimeScale, TimeScaleMagnitude, TimeScaleValue, TimeUnit, TranslateOff, WarningPolicy,
+    CheckLevel, DiagnosticOptions, DiagnosticOverride, DiagnosticSeverity, HierarchyMode,
+    LanguageVersion, SlangConfig, Source, TimeScale, TimeScaleMagnitude, TimeScaleValue, TimeUnit,
+    TranslateOff, WarningPolicy,
 };
 
 mod extract;
@@ -22,4 +26,5 @@ mod hierarchy;
 pub use hierarchy::Instance;
 
 mod package;
-pub use package::Package;
+pub use native::PackageView;
+pub use package::{Package, PackageLookup};

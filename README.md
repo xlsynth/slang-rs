@@ -55,8 +55,8 @@ Use `Source::file("top.sv")` to read an existing file.
 
 ## Packages and types
 
-Package value parameters are available in `Package.parameters` as evaluated
-`ConstantValue` values: integers, reals, byte strings, and compound values.
+Open a package with `Compilation::package` and use the `PackageLookup` trait to read one value parameter, localparam, enum constant, or typedef. Each lookup copies only the requested member into Rust. With `CheckLevel::Parse`, Slang also defers elaboration until a query needs it. A view borrows its compilation. Use `view.snapshot()?` to retain all supported members independently of the compilation, or `compilation.packages()?` to snapshot every package. Both a view and a snapshot implement the same lookup trait.
+
 Integers and enum values preserve width and signedness.
 Use `TryFrom` and `TryInto` for checked conversions to Rust integer types.
 `Package.enumerators` maps the names of enum constants declared directly in the
@@ -64,7 +64,7 @@ package to `IntegerValue`s.
 Typedefs are in `Package.types`:
 
 ```rust
-use slang_rs::{Compilation, SlangConfig, Source};
+use slang_rs::{Compilation, PackageLookup, SlangConfig, Source};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = SlangConfig {
@@ -77,11 +77,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "#)],
         ..Default::default()
     };
-    let packages = Compilation::new(&config)?.packages()?;
-    let pkg = &packages["my_pkg"];
-    let count = u64::try_from(&pkg.parameters["COUNT"])?;
-    let wide: num_bigint::BigInt = (&pkg.parameters["WIDE"]).try_into()?;
-    let word_type = pkg.types["word_t"].as_ref().unwrap();
+    let compilation = Compilation::new(&config)?;
+    let pkg = compilation.package("my_pkg")?;
+    let count = u64::try_from(pkg.parameter("COUNT")?.as_ref())?;
+    let wide: num_bigint::BigInt = pkg.parameter("WIDE")?.as_ref().try_into()?;
+    let word_type = pkg.ty("word_t")?;
     assert_eq!(count, 42);
     assert_eq!(wide, num_bigint::BigInt::from(1u8) << 64);
     assert_eq!(word_type.width()?, 16);
@@ -105,7 +105,7 @@ uses paths relative to the parent, including array indices and generate scopes;
 
 ```rust
 use slang_rs::{
-    DiagnosticOptions, DiagnosticOverride, DiagnosticSeverity, LanguageVersion,
+    CheckLevel, DiagnosticOptions, DiagnosticOverride, DiagnosticSeverity, LanguageVersion,
     SlangConfig, Source, WarningPolicy,
 };
 
@@ -118,6 +118,7 @@ let config = SlangConfig {
     tops: &["top"],
     language_version: LanguageVersion::SystemVerilog2023,
     single_unit: true,
+    check_level: CheckLevel::Analysis,
     diagnostics: DiagnosticOptions {
         warnings: WarningPolicy::All,
         overrides: &[DiagnosticOverride {
@@ -137,6 +138,16 @@ with `parameters`.
 
 Sources load in `sources` order. With `single_unit: true`, they share preprocessor
 definitions in that order.
+
+Use `check_level` to choose how much to check at construction:
+
+- `CheckLevel::Parse` checks preprocessing and syntax. Queries elaborate the declarations they need, but may return a value without reporting a semantic diagnostic such as an out-of-bounds index.
+- `CheckLevel::Semantic` also elaborates the whole design, so errors in declarations you never query are reported up front.
+- `CheckLevel::Analysis` (default) adds Slang's analysis passes, such as multiple-driver checks.
+
+Warning settings control severity at each level.
+
+`hierarchy_mode` defaults to `InferTops`: Slang infers roots when `tops` is empty. `ExplicitTopsOnly` uses only named roots and relaxes checks that assume a complete hierarchy.
 
 Diagnostics are collected without printing. Use `Compilation::diagnostics()`
 to inspect warnings; failures carry diagnostics in `Error`. See the

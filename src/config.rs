@@ -90,6 +90,29 @@ pub struct TranslateOff<'a> {
     pub end: &'a str,
 }
 
+/// How Slang selects top modules and handles diagnostics that require a complete hierarchy.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum HierarchyMode {
+    /// Use the named tops, or infer top modules from the inputs when no tops are named.
+    #[default]
+    InferTops,
+    /// Treat inputs as library units: only explicitly named modules become tops.
+    /// Slang also relaxes diagnostics that assume a complete hierarchy, even with named tops.
+    ExplicitTopsOnly,
+}
+
+/// How much of the design to check when constructing a compilation.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum CheckLevel {
+    /// Check preprocessing and syntax; elaborate declarations as queries request them.
+    Parse,
+    /// Also elaborate the whole design to report semantic diagnostics.
+    Semantic,
+    /// Also run Slang's analysis passes, including driver checks.
+    #[default]
+    Analysis,
+}
+
 /// Baseline warning policy, before applying individual overrides.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum WarningPolicy {
@@ -131,7 +154,7 @@ pub struct DiagnosticOverride<'a> {
     pub severity: DiagnosticSeverity,
 }
 
-/// Diagnostic controls applied directly to Slang's diagnostic engine.
+/// Warning policy, severity overrides, and error limit for the selected checks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct DiagnosticOptions<'a> {
     pub warnings: WarningPolicy,
@@ -193,11 +216,10 @@ pub struct SlangConfig<'a> {
     /// Let library units inherit macros from regular sources in `single_unit`
     /// mode. Library units otherwise have independent macro state.
     pub libraries_inherit_macros: bool,
-    /// Run Slang's post-elaboration semantic analysis.
-    pub analysis_enabled: bool,
-    /// Lint inputs without automatic top-level instantiation or post-elaboration
-    /// analysis. Explicitly selected `tops` are still elaborated.
-    pub lint_only: bool,
+    /// Checks to run at construction. Defaults to [`CheckLevel::Analysis`].
+    pub check_level: CheckLevel,
+    /// How to select tops and handle an incomplete hierarchy, independently of `check_level`.
+    pub hierarchy_mode: HierarchyMode,
     pub relax_enum_conversions: bool,
     /// Allow identifiers to be used before their declarations where Slang
     /// normally reports an error.
@@ -235,8 +257,8 @@ impl Default for SlangConfig<'_> {
             language_version: LanguageVersion::default(),
             single_unit: false,
             libraries_inherit_macros: false,
-            analysis_enabled: true,
-            lint_only: false,
+            check_level: CheckLevel::default(),
+            hierarchy_mode: HierarchyMode::default(),
             relax_enum_conversions: false,
             allow_use_before_declare: false,
             allow_toplevel_interface_ports: false,

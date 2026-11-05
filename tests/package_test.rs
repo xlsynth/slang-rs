@@ -92,7 +92,7 @@ mod tests {
 
     #[test]
     fn enumerators_belong_to_the_declaring_package() {
-        let packages = Compilation::new(&SlangConfig {
+        let compilation = Compilation::new(&SlangConfig {
             sources: &[Source::text(
                 "
                 package a; typedef enum logic [2:0] { B = 1 } mode_t; endpackage
@@ -100,14 +100,28 @@ mod tests {
                     typedef a::mode_t foreign_t;
                     enum logic signed [3:0] { B = -2, C } setting;
                 endpackage
-                package only_alias; typedef a::mode_t foreign_t; endpackage
+                package only_alias; import a::B; export a::B; typedef a::mode_t foreign_t; endpackage
             ",
             )],
             ..Default::default()
         })
-        .unwrap()
-        .packages()
         .unwrap();
+        let b = compilation.package("b").unwrap();
+        assert_eq!(b.enumerator("B").unwrap().as_ref(), &integer(4, true, 14u8));
+        assert!(matches!(
+            b.parameter("B"),
+            Err(slang_rs::LookupError::NotFound { .. })
+        ));
+        assert!(matches!(
+            b.enumerator("foreign_t"),
+            Err(slang_rs::LookupError::NotFound { .. })
+        ));
+        assert!(matches!(
+            compilation.package("only_alias").unwrap().enumerator("B"),
+            Err(slang_rs::LookupError::NotFound { .. })
+        ));
+        let packages = compilation.packages().unwrap();
+        assert_eq!(b.snapshot().unwrap(), packages["b"]);
         assert_eq!(packages["a"].enumerators["B"], integer(3, false, 1u8));
         assert_eq!(packages["b"].enumerators["B"], integer(4, true, 14u8));
         assert_eq!(packages["b"].enumerators["C"], integer(4, true, 15u8));
@@ -690,6 +704,105 @@ mod tests {
                 value: Box::new(integer_constant(32, true, 42u8)),
                 active_member: Some(0),
             }
+        );
+    }
+}
+
+#[test]
+fn live_and_owned_lookups_have_the_same_contract() {
+    use slang_rs::{Compilation, PackageLookup, SlangConfig, Source};
+
+    fn check(pkg: &dyn PackageLookup) -> slang_rs::Error {
+        let width = pkg.parameter("WIDTH").unwrap();
+        assert_eq!(usize::try_from(width.as_ref()).unwrap(), 12);
+        assert_eq!(pkg.ty("word_t").unwrap().width().unwrap(), 12);
+        for name in ["missing", "word_t", ""] {
+            assert_eq!(
+                pkg.parameter(name).unwrap_err(),
+                slang_rs::LookupError::NotFound {
+                    kind: "parameter",
+                    name: format!("p::{name}")
+                }
+            );
+        }
+        for name in ["missing", "WIDTH", ""] {
+            assert_eq!(
+                pkg.ty(name).unwrap_err(),
+                slang_rs::LookupError::NotFound {
+                    kind: "typedef",
+                    name: format!("p::{name}")
+                }
+            );
+        }
+        let slang_rs::LookupError::Extraction(err) = pkg.ty("unsupported_t").unwrap_err() else {
+            panic!("an unsupported typedef exists");
+        };
+        assert!(
+            err.diagnostics
+                .iter()
+                .any(|d| d.code == "UnsupportedPackageType")
+        );
+        err
+    }
+
+    let (snapshot, expected_error) = {
+        let sources = [Source::text(
+            "package p;
+            localparam int LANES = 3, WIDTH = LANES * 4;
+            typedef logic [WIDTH-1:0] word_t;
+            typedef string unsupported_t;
+        endpackage",
+        )];
+        let compilation = Compilation::new(&SlangConfig {
+            sources: &sources,
+            ..Default::default()
+        })
+        .unwrap();
+        let view = compilation.package("p").unwrap();
+        let error = check(&view);
+        (view.snapshot().unwrap(), error)
+    };
+    assert_eq!(check(&snapshot), expected_error);
+}
+
+#[test]
+fn single_member_lookups_do_not_evaluate_broken_siblings() {
+    use slang_rs::{CheckLevel, Compilation, PackageLookup, SlangConfig, Source};
+    let sources = [Source::text(
+        "package p;
+        localparam int BASE = 6, WIDTH = BASE + 1;
+        typedef logic [WIDTH-1:0] word_t;
+        localparam int BROKEN = MISSING;
+    endpackage",
+    )];
+    let config = SlangConfig {
+        sources: &sources,
+        check_level: CheckLevel::Parse,
+        ..Default::default()
+    };
+
+    // A native error poisons a compilation, so exercise each failing path independently.
+    for full_snapshot in [false, true] {
+        let compilation = Compilation::new(&config).unwrap();
+        let view = compilation.package("p").unwrap();
+        assert_eq!(
+            usize::try_from(view.parameter("WIDTH").unwrap().as_ref()).unwrap(),
+            7
+        );
+        assert_eq!(view.ty("word_t").unwrap().width().unwrap(), 7);
+        let err = if full_snapshot {
+            view.snapshot().unwrap_err()
+        } else {
+            let slang_rs::LookupError::Extraction(err) = view.parameter("BROKEN").unwrap_err()
+            else {
+                panic!("BROKEN exists but cannot be evaluated");
+            };
+            err
+        };
+        assert!(
+            err.diagnostics
+                .iter()
+                .any(|d| d.code == "UndeclaredIdentifier")
         );
     }
 }
