@@ -14,7 +14,10 @@ pub use config::{
 };
 
 mod extract;
-pub use extract::{Parameter, Port, PortDir, PortList};
+pub use extract::{
+    EvaluatedParameter, ModuleParameterDeclarations, ModuleParameterState, Parameter,
+    ParameterDeclaration, Port, PortDir, PortList,
+};
 
 mod types;
 pub use types::{Field, IntegralKind, Range, Type, Variant};

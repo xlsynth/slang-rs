@@ -8,6 +8,8 @@ namespace slang_rs {
 struct NativeDiagnostic;
 struct NativeConfig;
 struct InterfaceSnapshot;
+struct NamedValues;
+struct ParameterDeclarations;
 struct HierarchyNode;
 struct PackageSnapshot;
 enum class PackageSelection : std::uint8_t;
@@ -24,12 +26,16 @@ public:
     NativeCompilation& operator=(const NativeCompilation&) = delete;
 };
 
-std::unique_ptr<NativeCompilation> create_compilation(NativeConfig config);
+std::unique_ptr<NativeCompilation> create_compilation(NativeConfig config, bool replace_tops, rust::Str modules);
 bool compilation_valid(const NativeCompilation& compilation) noexcept;
 rust::Vec<NativeDiagnostic> take_compilation_diagnostics(NativeCompilation& compilation);
 rust::Vec<NativeDiagnostic> compilation_query_errors(const NativeCompilation& compilation);
 InterfaceSnapshot compilation_interfaces(const NativeCompilation& compilation, bool parameters,
-                                         bool skip_unsupported, rust::Str top);
+                                         bool skip_unsupported, rust::Str top,
+                                         bool enums_only);
+ParameterDeclarations compilation_parameter_declarations(const NativeCompilation& compilation, rust::Str top);
+NamedValues compilation_parameter_values(const NativeCompilation& compilation, rust::Str top,
+                                          rust::Slice<const rust::Str> names, bool all);
 rust::Vec<rust::String> compilation_modules(const NativeCompilation& compilation);
 rust::Vec<rust::String> compilation_top_names(const NativeCompilation& compilation);
 rust::Vec<rust::String> compilation_package_names(const NativeCompilation& compilation);

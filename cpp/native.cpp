@@ -22,6 +22,7 @@
 #include "slang/parsing/Lexer.h"
 #include "slang/parsing/Parser.h"
 #include "slang/parsing/Preprocessor.h"
+#include "slang/syntax/SyntaxPrinter.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/text/CharInfo.h"
 #include "slang/text/SourceManager.h"
@@ -31,6 +32,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -410,6 +412,50 @@ void appendScopeHierarchy(const Scope& scope, int64_t parent,
     }
 }
 
+// Return the name in the shared definition namespace (modules, interfaces, programs and UDPs).
+static std::string_view designUnitName(const syntax::MemberSyntax& member) {
+    using enum syntax::SyntaxKind;
+    switch (member.kind) {
+        case ModuleDeclaration:
+        case InterfaceDeclaration:
+        case ProgramDeclaration: return member.as<syntax::ModuleDeclarationSyntax>().header->name.valueText();
+        case ExternModuleDecl: return member.as<syntax::ExternModuleDeclSyntax>().header->name.valueText();
+        case UdpDeclaration: return member.as<syntax::UdpDeclarationSyntax>().name.valueText();
+        case ExternUdpDecl: return member.as<syntax::ExternUdpDeclSyntax>().name.valueText();
+        default: return {};
+    }
+}
+
+// Rebuild just the compilation-unit member list. Slang links enum declarations to
+// their owning types by syntax-node identity. The session retains the source tree
+// and its allocator for the lifetime of the filtered compilation.
+static std::shared_ptr<syntax::SyntaxTree> filterDefinitions(
+    const std::shared_ptr<syntax::SyntaxTree>& tree,
+    const std::unordered_set<std::string_view>& replaced) {
+    auto& unit = tree->root().as<syntax::CompilationUnitSyntax>();
+    auto& alloc = tree->allocator();
+    syntax::SyntaxFactory factory(alloc);
+    std::vector<syntax::MemberSyntax*> members;
+    bool changed = false;
+    for (auto* member : unit.members) {
+        if (replaced.contains(designUnitName(*member)) ||
+            member->kind == syntax::SyntaxKind::BindDirective ||
+            member->kind == syntax::SyntaxKind::ConfigDeclaration) {
+            // Directives before a removed declaration can still apply to the next package.
+            const auto first = member->getFirstToken();
+            parsing::Token semi(alloc, parsing::TokenKind::Semicolon, first.trivia(), ";", first.location());
+            member = &factory.emptyMember({}, {}, semi);
+            member->parent = &unit;
+            changed = true;
+        }
+        members.push_back(member);
+    }
+    if (!changed) return tree;
+    unit.members = syntax::SyntaxList<syntax::MemberSyntax>(alloc, members);
+    return std::make_shared<syntax::SyntaxTree>(&unit, tree->sourceManager(), BumpAllocator{},
+                                                tree->getSourceLibrary(), tree);
+}
+
 } // namespace
 
 struct NativeCompilation::Impl {
@@ -435,7 +481,7 @@ NativeCompilation::NativeCompilation(NativeConfig config) :
     impl(std::make_unique<Impl>(std::move(config))) {}
 NativeCompilation::~NativeCompilation() = default;
 
-std::unique_ptr<NativeCompilation> create_compilation(NativeConfig input) {
+std::unique_ptr<NativeCompilation> create_compilation(NativeConfig input, bool replace_tops, rust::Str modules) {
     auto owner = std::make_unique<NativeCompilation>(std::move(input));
     auto& state = *owner->impl;
     const auto& config = state.config;
@@ -533,6 +579,7 @@ std::unique_ptr<NativeCompilation> create_compilation(NativeConfig input) {
     CompilationOptions compilation;
     compilation.languageVersion = version;
     compilation.flags = CompilationFlags::None;
+    if (replace_tops) compilation.flags |= CompilationFlags::IgnoreUninstantiatedModules;
     if (config.ignore_unknown_modules) compilation.flags |= CompilationFlags::IgnoreUnknownModules;
     if (config.explicit_tops_only) compilation.flags |= CompilationFlags::LintMode;
     if (config.relax_enum_conversions) compilation.flags |= CompilationFlags::RelaxEnumConversions;
@@ -597,7 +644,7 @@ std::unique_ptr<NativeCompilation> create_compilation(NativeConfig input) {
         return !loader.getErrors().empty();
     };
     if (loadFailed()) return owner;
-    if (!loader.hasFiles()) {
+    if (!loader.hasFiles() && !replace_tops) {
         error("no input files", "SourceLoadError");
         return owner;
     }
@@ -605,12 +652,37 @@ std::unique_ptr<NativeCompilation> create_compilation(NativeConfig input) {
         state.threadPool = std::make_shared<ThreadPool>(config.num_threads);
     state.syntaxTrees = loader.loadAndParseSources(options, state.threadPool.get());
     if (loadFailed()) return owner;
+    std::shared_ptr<syntax::SyntaxTree> supplied;
+    std::unordered_set<std::string_view> replaced;
+    if (replace_tops) {
+        supplied = syntax::SyntaxTree::fromFileInMemory(
+            std::string_view(modules.data(), modules.size()), state.sourceManager,
+            "replacement_modules", "", options);
+        supplied->isLibraryUnit = config.explicit_tops_only;
+        for (const auto* member : supplied->root().as<syntax::CompilationUnitSyntax>().members) {
+            if (auto name = designUnitName(*member); !name.empty()) replaced.emplace(name);
+        }
+        state.syntaxTrees.push_back(supplied);
+        if (!config.libdirs.empty()) {
+            driver::SourceLoader::loadTrees(state.syntaxTrees,
+                [&](std::string_view name) { return loader.findBuffer(name); },
+                state.sourceManager, options, config.libraries_inherit_macros ?
+                    supplied->getDefinedMacros() : syntax::SyntaxTree::MacroList{});
+        }
+    }
     engine.issue(engine.setMappingsFromPragmas());
 
     auto* defaultLibrary = loader.getOrAddLibrary("work");
     defaultLibrary->isDefault = true;
     state.compilation = std::make_unique<Compilation>(options, defaultLibrary);
-    for (auto& tree : state.syntaxTrees) state.compilation->addSyntaxTree(tree);
+    for (const auto& tree : state.syntaxTrees) {
+        auto filtered = supplied && tree != supplied ? filterDefinitions(tree, replaced) : tree;
+        if (filtered != tree) {
+            filtered->isLibraryUnit = tree->isLibraryUnit;
+            engine.issue(tree->diagnostics());
+        }
+        state.compilation->addSyntaxTree(std::move(filtered));
+    }
     if (config.check_level == NativeCheckLevel::Parse)
         engine.issue(state.compilation->getParseDiagnostics());
     else
@@ -647,8 +719,25 @@ rust::Vec<NativeDiagnostic> compilation_query_errors(const NativeCompilation& ow
     return std::move(state.diagnostics->diagnostics);
 }
 
+// Use Slang's indexed root scope when the caller selects a single top.
+static const InstanceSymbol* findTop(const RootSymbol& root, rust::Str top) {
+    const auto* symbol = root.find(std::string_view(top.data(), top.size()));
+    return symbol ? symbol->as_if<InstanceSymbol>() : nullptr;
+}
+
+template<typename Func>
+static void forEachTop(const RootSymbol& root, rust::Str top, Func func) {
+    if (top.empty()) {
+        for (const auto* instance : root.topInstances) func(*instance);
+    }
+    else if (const auto* instance = findTop(root, top)) {
+        func(*instance);
+    }
+}
+
 InterfaceSnapshot compilation_interfaces(const NativeCompilation& owner, bool parameters,
-                                         bool skip_unsupported, rust::Str top) {
+                                         bool skip_unsupported, rust::Str top,
+                                         bool enums_only) {
     InterfaceSnapshot snapshot{};
     DiagnosticCollector diagnostics;
     diagnostics.setEngine(owner.impl->diagEngine);
@@ -657,21 +746,30 @@ InterfaceSnapshot compilation_interfaces(const NativeCompilation& owner, bool pa
             diagnostics.append(NativeSeverity::Error, "UnsupportedInterface",
                                symbol.getHierarchicalPath() + ": " + error.what(), symbol.location);
     };
-    for (const auto* instance : owner.impl->compilation->getRoot().topInstances) {
-        if (instance->name.empty() || (!top.empty() && instance->name != std::string_view(top.data(), top.size()))) continue;
+    forEachTop(owner.impl->compilation->getRoot(), top, [&](const InstanceSymbol& instance) {
+        if (instance.name.empty()) return;
         NativeModule module{};
-        module.name = rustString(instance->name);
+        module.name = rustString(instance.name);
         if (parameters) {
-            for (const auto& parameter : instance->body.membersOfType<ParameterSymbol>()) {
-                try {
-                    auto index = appendType(parameter.getType(), snapshot.types);
-                    module.parameters.push_back(NativeParameter{rustString(parameter.name), index});
+            for (const auto* member : instance.body.getParameters()) {
+                const auto* parameter = member->symbol.as_if<ParameterSymbol>();
+                if (!parameter || (enums_only && member->isLocalParam())) continue;
+                if (enums_only) {
+                    // An inferred integral parameter has a vector type, even for an enum initializer.
+                    // Skip it before resolving the initializer in a parse-only compilation.
+                    const auto* declared = parameter->getDeclaredType()->getTypeSyntax();
+                    if (declared && declared->kind == syntax::SyntaxKind::ImplicitType) continue;
+                    if (!parameter->getType().isEnum()) continue;
                 }
-                catch (const Unsupported& error) { unsupported(parameter, error); }
+                try {
+                    auto index = appendType(parameter->getType(), snapshot.types);
+                    module.parameters.push_back(NativeParameter{rustString(parameter->name), index});
+                }
+                catch (const Unsupported& error) { unsupported(*parameter, error); }
             }
         }
         else {
-            for (const auto* symbol : instance->body.getPortList()) {
+            for (const auto* symbol : instance.body.getPortList()) {
                 try {
                     if (symbol->kind == SymbolKind::InterfacePort)
                         throw Unsupported("Interface ports are not currently supported.");
@@ -686,9 +784,212 @@ InterfaceSnapshot compilation_interfaces(const NativeCompilation& owner, bool pa
             }
         }
         snapshot.modules.push_back(std::move(module));
-    }
+    });
     snapshot.diagnostics = std::move(diagnostics.diagnostics);
     return snapshot;
+}
+
+// The parameter interface includes port localparams but excludes body-local implementation details.
+static bool isInterfaceParameter(const DefinitionSymbol::ParameterDecl& declaration) {
+    return !declaration.isLocalParam || declaration.isPortParam;
+}
+
+NamedValues compilation_parameter_values(const NativeCompilation& owner, rust::Str top,
+                                          rust::Slice<const rust::Str> names, bool all) {
+    NamedValues result{};
+    const auto* instance = findTop(owner.impl->compilation->getRoot(), top);
+    if (!instance) return result;
+    result.found_top = true;
+    auto snapshotType = [&](const Type& type, auto& member) {
+        try {
+            member.ty = appendType(type, result.types);
+        }
+        catch (const Unsupported& error) {
+            member.type_error = error.what();
+        }
+    };
+    auto snapshotValue = [&](const ParameterSymbol& parameter) {
+        const auto& value = parameter.getValue();
+        NativeEvaluatedParameter member{};
+        member.name = rustString(parameter.name);
+        member.value = appendValue(value, result.values);
+        member.is_implicit_string = value.isInteger() && parameter.isImplicitString({});
+        snapshotType(parameter.getType(), member);
+        result.members.push_back(std::move(member));
+    };
+
+    if (all) {
+        for (const auto& decl : instance->getDefinition().parameters) {
+            if (!isInterfaceParameter(decl)) continue;
+            const auto* symbol = instance->body.find(decl.name);
+            if (!symbol)
+                throw Unsupported("Cannot find elaborated parameter: " + std::string(decl.name));
+            if (decl.isTypeParam) {
+                NativeTypeParameter member{};
+                member.name = rustString(decl.name);
+                snapshotType(symbol->as<TypeParameterSymbol>().targetType.getType(), member);
+                result.type_members.push_back(std::move(member));
+            }
+            else {
+                snapshotValue(symbol->as<ParameterSymbol>());
+            }
+        }
+    }
+    else {
+        for (auto name : names) {
+            const auto* symbol = instance->body.find(std::string_view(name.data(), name.size()));
+            if (symbol && symbol->kind == SymbolKind::Parameter && !symbol->as<ParameterSymbol>().isLocalParam())
+                snapshotValue(symbol->as<ParameterSymbol>());
+        }
+    }
+    return result;
+}
+
+// Preserve source trivia and separate tokens brought together by expansion. Only
+// lexemes adjacent in the same source buffer are safe to join without whitespace.
+static void appendDeclarationToken(std::string& text, parsing::Token& previous,
+                                   parsing::Token token) {
+    if (!token || token.isMissing()) return;
+    const auto spelling = token.rawText();
+    if (spelling.empty()) return;
+    if (!previous)
+        text += spelling;
+    else {
+        syntax::SyntaxPrinter printer;
+        auto printed = printer.setExpandMacros(true).print(token).str();
+        // A leading comment can join a preceding slash and change the token stream.
+        if (previous.range().end() != token.location() && !printed.empty() && !isWhitespace(printed.front()))
+            text += ' ';
+        text += printed;
+    }
+    previous = token;
+}
+
+// Serialize one preprocessed fragment without trivia preceding its first token.
+static std::string declarationText(const syntax::SyntaxNode& node) {
+    std::string text;
+    parsing::Token previous;
+    for (auto it = node.tokens_begin(); it != node.tokens_end(); ++it)
+        appendDeclarationToken(text, previous, *it);
+    // Escaped identifiers end at whitespace, including at the end of a fragment.
+    if (previous && previous.rawText().starts_with("\\")) text += ' ';
+    return text;
+}
+
+struct ParameterInitializer {
+    const syntax::DeclaratorSyntax* declaration;
+    size_t member;
+};
+
+// Record initializer ranges in expanded output. Source offsets can point into macro definitions.
+static void appendParameterDeclaration(std::string& text, const syntax::SyntaxNode& node,
+                                       const std::vector<ParameterInitializer>& initializers,
+                                       ParameterDeclarations& result) {
+    auto it = node.tokens_begin();
+    const auto end = node.tokens_end();
+    parsing::Token previous;
+    auto printThrough = [&](parsing::Token last) {
+        while (it != end) {
+            auto token = *it;
+            ++it;
+            appendDeclarationToken(text, previous, token);
+            if (token == last) return text.size();
+        }
+        throw Unsupported("Cannot locate parameter initializer in its declaration");
+    };
+
+    for (const auto& [decl, index] : initializers) {
+        auto& member = result.members[index];
+        const auto last = decl->dimensions.empty() ? decl->name : decl->dimensions.back()->getLastToken();
+        member.initializer_start = printThrough(last);
+        member.initializer_end = decl->initializer ?
+            printThrough(decl->initializer->getLastToken()) : member.initializer_start;
+    }
+    printThrough(node.getLastToken());
+}
+
+ParameterDeclarations compilation_parameter_declarations(const NativeCompilation& owner, rust::Str top) {
+    ParameterDeclarations result{};
+    const auto* instance = findTop(owner.impl->compilation->getRoot(), top);
+    if (!instance) return result;
+    result.found_top = true;
+    const auto& definition = instance->getDefinition();
+    if (const auto scale = instance->body.getTimeScale())
+        result.timescale = rustString(scale->toString());
+    const auto* source = definition.getSyntax();
+    const auto* module = source ? source->as_if<syntax::ModuleDeclarationSyntax>() : nullptr;
+    std::vector<ParameterInitializer> portInitializers;
+    std::unordered_map<const syntax::SyntaxNode*, std::vector<ParameterInitializer>> bodyDeclarations;
+    for (const auto& decl : definition.parameters) {
+        if (!isInterfaceParameter(decl)) continue;
+        ++result.parameter_count;
+        result.declaration_names.push_back(rustString(decl.name));
+        if (decl.isLocalParam) continue;
+        if (!decl.hasSyntax)
+            throw Unsupported("Parameter declaration has no source syntax: " + std::string(decl.name));
+        if (decl.isTypeParam) {
+            if (!decl.isPortParam) bodyDeclarations.try_emplace(decl.typeSyntax->parent);
+            continue;
+        }
+        const ParameterInitializer initializer{decl.valueDecl, result.members.size()};
+        if (decl.isPortParam)
+            portInitializers.push_back(initializer);
+        else
+            bodyDeclarations[decl.valueSyntax->parent].push_back(initializer);
+
+        NativeParameterDeclaration member{};
+        member.name = rustString(decl.name);
+        member.is_port = decl.isPortParam;
+        const auto& type = *decl.valueSyntax->type;
+        member.data_type = rustString(declarationText(type));
+        std::string dimensions;
+        for (const auto* dimension : decl.valueDecl->dimensions)
+            dimensions += declarationText(*dimension);
+        member.dimensions = rustString(dimensions);
+        if (const auto* init = decl.valueDecl->initializer)
+            member.default_expression = rustString(declarationText(*init->expr));
+
+        if (type.kind == syntax::SyntaxKind::NamedType) {
+            const auto* symbol = instance->body.find(decl.name);
+            if (symbol && symbol->kind == SymbolKind::Parameter) {
+                const auto& resolved = symbol->as<ParameterSymbol>().getType();
+                const auto* scope = resolved.getParentScope();
+                if (resolved.kind == SymbolKind::TypeAlias && scope && scope->asSymbol().kind == SymbolKind::Package) {
+                    member.package_name = rustString(scope->asSymbol().name);
+                    member.typedef_name = rustString(resolved.name);
+                }
+            }
+        }
+        result.members.push_back(std::move(member));
+    }
+    if (module) {
+        for (const auto* import : module->header->imports)
+            result.imports.push_back(rustString(declarationText(*import)));
+        if (const auto* list = module->header->parameters) {
+            std::string text;
+            appendParameterDeclaration(text, *list, portInitializers, result);
+            result.port_list = rustString(text);
+        }
+        if (!bodyDeclarations.empty()) {
+            std::string text;
+            for (const auto* statement : module->members) {
+                if (auto decl = bodyDeclarations.find(statement); decl != bodyDeclarations.end()) {
+                    appendParameterDeclaration(text, *statement, decl->second, result);
+                    text += '\n';
+                    bodyDeclarations.erase(decl);
+                    if (bodyDeclarations.empty()) break;
+                }
+                else if (statement->kind == syntax::SyntaxKind::PackageImportDeclaration) {
+                    text += declarationText(*statement);
+                    text += '\n';
+                }
+            }
+            if (!bodyDeclarations.empty())
+                throw Unsupported("Cannot locate parameter declaration in the module body");
+            result.body = rustString(text);
+        }
+    }
+    return result;
 }
 
 rust::Vec<rust::String> compilation_modules(const NativeCompilation& owner) {
@@ -710,9 +1011,9 @@ rust::Vec<rust::String> compilation_top_names(const NativeCompilation& owner) {
 
 rust::Vec<HierarchyNode> compilation_hierarchy(const NativeCompilation& owner, rust::Str top) {
     rust::Vec<HierarchyNode> result;
-    for (const auto* instance : owner.impl->compilation->getRoot().topInstances)
-        if (top.empty() || instance->name == std::string_view(top.data(), top.size()))
-            appendInstance(*instance, -1, result, 0);
+    forEachTop(owner.impl->compilation->getRoot(), top, [&](const InstanceSymbol& instance) {
+        appendInstance(instance, -1, result, 0);
+    });
     return result;
 }
 
@@ -748,7 +1049,7 @@ static PackageSnapshot readPackage(const NativeCompilation& owner, const Package
         if (member.kind == SymbolKind::Parameter &&
             (selection == PackageSelection::All || selection == PackageSelection::Parameter)) {
             const auto& value = member.as<ParameterSymbol>().getValue();
-            snapshot.parameters.push_back(NativePackageValue{rustString(member.name),
+            snapshot.parameters.push_back(NamedValue{rustString(member.name),
                 appendValue(value, snapshot.values)});
         }
         else if (member.kind == SymbolKind::EnumValue &&
