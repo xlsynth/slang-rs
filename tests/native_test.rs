@@ -534,3 +534,362 @@ fn diagnostics_and_errors_share_readable_formatting() {
         "extraction failed"
     );
 }
+
+#[test]
+fn selected_parameter_values_belong_to_the_elaborated_top() {
+    let source = r#"module Leaf #(parameter W=4, parameter MSG="ab\000cd",
+                                 localparam L=W+1) (); endmodule
+                    module Other; endmodule"#;
+    let compilation = Compilation::new(&SlangConfig {
+        sources: &[Source::text(source)],
+        parameters: &[("W", "4 + 4")],
+        ..Default::default()
+    })
+    .unwrap();
+    let requested = ["W", "L", "missing", "MSG"];
+    let values = compilation
+        .parameter_values_for("Leaf", &requested)
+        .unwrap();
+    assert_eq!(values.len(), 2);
+    assert_eq!(
+        i32::try_from(values["W"].value.as_integer().unwrap()).unwrap(),
+        8
+    );
+    let msg = values["MSG"].value.as_integer().unwrap();
+    assert_eq!(msg.width, 40);
+    assert_eq!(msg.bits, num_bigint::BigUint::from_bytes_be(b"ab\0cd"));
+    assert!(values["MSG"].is_implicit_string);
+    assert!(!values["W"].is_implicit_string);
+    assert_eq!(values["W"].ty.as_ref().unwrap().width().unwrap(), 32);
+    assert!(
+        compilation
+            .parameter_values_for("Other", &requested)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        compilation
+            .parameter_values_for("Absent", &requested)
+            .is_err()
+    );
+}
+
+#[test]
+fn selected_parameter_retains_enum_type_and_unknown_string_bits() {
+    let source = r#"package p;
+                       typedef enum logic [1:0] { A=0, B=1 } mode_t;
+                    endpackage
+                    module Leaf #(parameter p::mode_t MODE=p::A,
+                                  parameter V=1'bx ? "x" : "y",
+                                  parameter string TEXT="abc",
+                                  parameter real R=1.5) (); endmodule"#;
+    let compilation = Compilation::new(&SlangConfig {
+        sources: &[Source::text(source)],
+        parameters: &[("MODE", "p::B")],
+        ..Default::default()
+    })
+    .unwrap();
+    let values = compilation
+        .parameter_values_for("Leaf", &["MODE", "V", "TEXT", "R"])
+        .unwrap();
+    assert!(
+        matches!(&values["MODE"].ty, Ok(slang_rs::Type::Enum { name: Some(name), .. }) if name == "p::mode_t")
+    );
+    assert_eq!(
+        u32::try_from(values["MODE"].value.as_integer().unwrap()).unwrap(),
+        1
+    );
+    assert!(values["V"].is_implicit_string);
+    assert!(!values["MODE"].is_implicit_string);
+    let bits = values["V"].value.as_integer().unwrap();
+    assert_eq!(bits.width, 8);
+    assert_eq!(bits.bits, 0x78u32.into());
+    assert_eq!(bits.x_mask, 1u32.into());
+    assert_eq!(bits.z_mask, 0u32.into());
+    assert_eq!(values["TEXT"].value, ConstantValue::String(b"abc".to_vec()));
+    assert!(values["TEXT"].ty.is_err());
+    assert_eq!(values["R"].value, ConstantValue::Real(1.5));
+    assert!(values["R"].ty.is_err());
+}
+
+#[test]
+fn implicit_string_and_packed_integer_have_distinct_conversion_properties() {
+    let source = r#"module Leaf #(parameter V=1'bx ? "x" : "y",
+                                  parameter logic [7:0] RAW=8'b0111100x,
+                                  parameter string TEXT="abc",
+                                  parameter enum logic { A, B } MODE=A,
+                                  localparam enum logic { C, D } LOCAL=C) (); endmodule
+                    module Other; endmodule"#;
+    let compilation = Compilation::new(&SlangConfig {
+        sources: &[Source::text(source)],
+        ..Default::default()
+    })
+    .unwrap();
+    let values = compilation
+        .parameter_values_for("Leaf", &["V", "RAW"])
+        .unwrap();
+    assert_eq!(values["V"].value, values["RAW"].value);
+    assert!(values["V"].is_implicit_string);
+    assert!(!values["RAW"].is_implicit_string);
+    let parameters = compilation.enum_parameters_for("Leaf").unwrap();
+    assert_eq!(
+        parameters
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect::<Vec<_>>(),
+        ["MODE"]
+    );
+    assert!(compilation.enum_parameters_for("Other").unwrap().is_empty());
+    assert!(compilation.enum_parameters_for("Absent").is_err());
+}
+
+#[test]
+fn enum_queries_include_body_parameters_and_leave_inferred_values_lazy() {
+    let source = "package p; typedef enum { OFF, ON } mode_t; endpackage
+        module Header #(parameter type T=p::mode_t, parameter T MODE=p::OFF,
+                        parameter INFERRED=p::ON)(); localparam int LOCAL=1; endmodule
+        module Body; parameter p::mode_t MODE=p::OFF; localparam p::mode_t LOCAL=p::ON; endmodule";
+    let compilation = Compilation::new(&SlangConfig {
+        sources: &[Source::text(source)],
+        ..Default::default()
+    })
+    .unwrap();
+    let all = compilation.parameters().unwrap();
+    for (top, expected) in [
+        ("Header", vec!["MODE", "INFERRED", "LOCAL"]),
+        ("Body", vec!["MODE", "LOCAL"]),
+    ] {
+        let enums = compilation.enum_parameters_for(top).unwrap();
+        assert_eq!(enums.len(), 1);
+        assert_eq!(enums[0].name, "MODE");
+        assert_eq!(
+            all[top].iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+            expected
+        );
+    }
+
+    let partial = Compilation::new(&SlangConfig {
+        sources: &[Source::text(
+            "module Partial #(parameter UNUSED=missing)(); endmodule",
+        )],
+        check_level: slang_rs::CheckLevel::Parse,
+        ..Default::default()
+    })
+    .unwrap();
+    assert!(partial.enum_parameters_for("Partial").unwrap().is_empty());
+}
+
+/// Re-elaborate a reconstructed header at both the original and a different specialization.
+#[test]
+fn expanded_parameter_tokens_retain_their_lexical_boundaries() {
+    let source = r#"
+        `define ALL(x) &(x)
+        `define TYPE bit
+        `define NAME B
+        `define JOIN(a,b) a``b
+        module Leaf #(parameter `TYPE [1:0] `NAME=2'b11,
+                      parameter `TYPE`JOIN(RED,UCED)=1 &`ALL(B),
+                      parameter \x.y =REDUCED)();
+        endmodule"#;
+    let compile = |text: &str| {
+        Compilation::new(&SlangConfig {
+            sources: &[Source::text(text)],
+            ..Default::default()
+        })
+        .unwrap()
+    };
+    let original = compile(source);
+    let decl = original.parameter_declarations_for("Leaf").unwrap();
+    let observed = |comp: &Compilation| {
+        let values = comp
+            .parameter_values_for("Leaf", &["REDUCED", "x.y"])
+            .unwrap();
+        ["REDUCED", "x.y"].map(|n| u32::try_from(values[n].value.as_integer().unwrap()).unwrap())
+    };
+    let list = decl.port_list.unwrap();
+    let expr = decl.parameters["REDUCED"].default.as_deref().unwrap();
+    let make_module = |header: &str| format!("module Leaf {header} (); endmodule");
+    assert_eq!(observed(&original), [1, 1]);
+    assert_eq!(observed(&compile(&make_module(&list))), [1, 1]);
+
+    // The two operators agree at 2'b11. At 2'b10 a logical AND incorrectly returns one.
+    let alternate = Compilation::new(&SlangConfig {
+        sources: &[Source::text(source)],
+        parameters: &[("B", "2'b10")],
+        ..Default::default()
+    })
+    .unwrap();
+    assert_eq!(observed(&alternate), [0, 0]);
+    let range = decl.parameters["B"].port_list_initializer.clone().unwrap();
+    let mut changed = list;
+    changed.replace_range(range, "=2'b10");
+    assert_eq!(observed(&compile(&make_module(&changed))), [0, 0]);
+    let from_fragment =
+        format!("#(parameter B=2'b10, parameter REDUCED={expr}, parameter \\x.y =REDUCED)");
+    assert_eq!(observed(&compile(&make_module(&from_fragment))), [0, 0]);
+}
+
+#[test]
+fn division_before_a_comment_survives_macro_expansion() {
+    let source = r"`define DIV /
+        module Leaf #(parameter A=0, parameter W=A `DIV/* divisor */ 2
+                                                  + 1)(); endmodule";
+    let compile = |source: &str, parameters: &[(&str, &str)]| {
+        Compilation::new(&SlangConfig {
+            sources: &[Source::text(source)],
+            parameters,
+            ..Default::default()
+        })
+        .unwrap()
+    };
+    let declarations = compile(source, &[])
+        .parameter_declarations_for("Leaf")
+        .unwrap();
+    let header = declarations.port_list.unwrap();
+    let default = declarations.parameters["W"].default.as_deref().unwrap();
+    let from_header = format!("module Leaf {header} (); endmodule");
+    let from_fragment = format!("module Leaf #(parameter A=0, parameter W={default})(); endmodule");
+
+    for candidate in [source, &from_header, &from_fragment] {
+        for (parameters, expected) in [(&[][..], 1), (&[("A", "8")][..], 5)] {
+            let values = compile(candidate, parameters)
+                .parameter_values_for("Leaf", &["W"])
+                .unwrap();
+            assert_eq!(usize::try_from(&values["W"].value).unwrap(), expected);
+        }
+    }
+}
+
+#[test]
+fn original_parameter_declarations_survive_specialization() {
+    let package = r#"package p;
+        typedef struct packed {logic mode;} cfg_t;
+        localparam cfg_t RESET = '{mode:1'b1};
+        typedef cfg_t \cfg.done ;
+        localparam \reset.done = '0;
+    endpackage"#;
+    let source = r#"
+        `define BYTE logic [7:0]
+        module Leaf import p::*; #(
+          parameter int W,
+          parameter V=string'("a"),
+          parameter string NAME="a", OTHER_NAME="b",
+          parameter `BYTE MASK = (W + 1),
+          parameter signed [W-1:0] DELTA = 0,
+          parameter cfg_t CFG=RESET,
+          parameter \cfg.done ESC=p::\reset.done ,
+          parameter logic TABLE[2] = '{default:1'b0},
+          localparam HIDDEN=9,
+          parameter type T=bit
+        ) (); endmodule
+        module Bare; parameter \x.y = 1; endmodule"#;
+    let compilation = Compilation::new(&SlangConfig {
+        sources: &[Source::text(package), Source::text(source)],
+        tops: &["Leaf", "Bare"],
+        parameters: &[("W", "8"), ("V", "5")],
+        ..Default::default()
+    })
+    .unwrap();
+    let declarations = compilation.parameter_declarations_for("Leaf").unwrap();
+    assert_eq!(declarations.imports, ["import p::*;"]);
+    // Recompile the header in a new compilation unit, with no macro definitions.
+    let mut header = declarations.port_list.unwrap();
+    for (name, value) in [("ESC", "'1"), ("OTHER_NAME", r#""edited""#), ("W", "12")] {
+        let range = declarations.parameters[name]
+            .port_list_initializer
+            .clone()
+            .unwrap();
+        header.replace_range(range, &format!(" = {value}"));
+    }
+    assert!(header.contains("localparam HIDDEN=9"));
+    assert!(header.contains("parameter type T=bit"));
+    let rebuilt = format!(
+        "module Rebuilt {} {header} (); endmodule",
+        declarations.imports.join(" ")
+    );
+    let copy = Compilation::new(&SlangConfig {
+        sources: &[Source::text(package), Source::text(&rebuilt)],
+        ..Default::default()
+    })
+    .unwrap();
+    let cfg = copy
+        .parameter_values_for("Rebuilt", &["CFG", "W", "OTHER_NAME", "ESC"])
+        .unwrap();
+    assert_eq!(
+        u32::try_from(cfg["W"].value.as_integer().unwrap()).unwrap(),
+        12
+    );
+    assert_eq!(
+        cfg["OTHER_NAME"].value,
+        ConstantValue::String("edited".into())
+    );
+    assert_eq!(
+        u32::try_from(cfg["ESC"].value.as_integer().unwrap()).unwrap(),
+        1
+    );
+    assert_eq!(
+        u32::try_from(cfg["CFG"].value.as_integer().unwrap()).unwrap(),
+        1
+    );
+    let parameters = declarations.parameters;
+    assert_eq!(
+        parameters.keys().map(String::as_str).collect::<Vec<_>>(),
+        [
+            "W",
+            "V",
+            "NAME",
+            "OTHER_NAME",
+            "MASK",
+            "DELTA",
+            "CFG",
+            "ESC",
+            "TABLE"
+        ]
+    );
+    assert_eq!(parameters["W"].data_type.as_deref(), Some("int"));
+    assert_eq!(parameters["W"].default, None);
+    assert!(
+        parameters["W"]
+            .port_list_initializer
+            .as_ref()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(parameters["V"].data_type, None);
+    assert_eq!(parameters["V"].default.as_deref(), Some(r#"string'("a")"#));
+    assert_eq!(parameters["NAME"].data_type.as_deref(), Some("string"));
+    assert_eq!(
+        parameters["OTHER_NAME"].data_type.as_deref(),
+        Some("string")
+    );
+    assert_eq!(parameters["MASK"].data_type.as_deref(), Some("logic [7:0]"));
+    assert_eq!(parameters["MASK"].default.as_deref(), Some("(W + 1)"));
+    assert_eq!(
+        parameters["DELTA"].data_type.as_deref(),
+        Some("signed [W-1:0]")
+    );
+    assert_eq!(parameters["CFG"].data_type.as_deref(), Some("cfg_t"));
+    assert_eq!(
+        parameters["CFG"].package_type,
+        Some(("p".into(), "cfg_t".into()))
+    );
+    assert_eq!(parameters["TABLE"].dimensions, "[2]");
+    assert_eq!(parameters["ESC"].data_type.as_deref(), Some(r"\cfg.done "));
+    assert_eq!(
+        parameters["ESC"].default.as_deref(),
+        Some(r"p::\reset.done ")
+    );
+    assert_eq!(
+        compilation
+            .parameter_declarations_for("Bare")
+            .unwrap()
+            .parameters["x.y"]
+            .default
+            .as_deref(),
+        Some("1")
+    );
+    assert!(matches!(
+        compilation.parameter_declarations_for("Missing"),
+        Err(slang_rs::LookupError::NotFound { .. })
+    ));
+}

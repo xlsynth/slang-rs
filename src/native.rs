@@ -10,10 +10,11 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 use crate::{
-    CheckLevel, ConstantValue, DiagnosticOptions, DiagnosticSeverity, Field, HierarchyMode,
-    Instance, IntegerValue, IntegralKind, LanguageVersion, LookupError, Package, PackageLookup,
-    Parameter, Port, PortDir, PortList, Range, SlangConfig, Source, TimeScale, TimeScaleMagnitude,
-    TimeScaleValue, TimeUnit, Type, Variant, WarningPolicy,
+    CheckLevel, ConstantValue, DiagnosticOptions, DiagnosticSeverity, EvaluatedParameter, Field,
+    HierarchyMode, Instance, IntegerValue, IntegralKind, LanguageVersion, LookupError,
+    ModuleParameterDeclarations, ModuleParameterState, Package, PackageLookup, Parameter,
+    ParameterDeclaration, Port, PortDir, PortList, Range, SlangConfig, Source, TimeScale,
+    TimeScaleMagnitude, TimeScaleValue, TimeUnit, Type, Variant, WarningPolicy,
 };
 use num_bigint::BigUint;
 
@@ -205,7 +206,47 @@ mod ffi {
         path: String,
         parent: i64,
     }
-    struct NativePackageValue {
+    struct NamedValues {
+        found_top: bool,
+        members: Vec<NativeEvaluatedParameter>,
+        type_members: Vec<NativeTypeParameter>,
+        values: Vec<ValueNode>,
+        types: Vec<TypeNode>,
+    }
+    struct ParameterDeclarations {
+        found_top: bool,
+        parameter_count: usize,
+        declaration_names: Vec<String>,
+        timescale: String,
+        imports: Vec<String>,
+        port_list: String,
+        body: String,
+        members: Vec<NativeParameterDeclaration>,
+    }
+    struct NativeParameterDeclaration {
+        name: String,
+        data_type: String,
+        dimensions: String,
+        default_expression: String,
+        is_port: bool,
+        initializer_start: usize,
+        initializer_end: usize,
+        package_name: String,
+        typedef_name: String,
+    }
+    struct NativeTypeParameter {
+        name: String,
+        ty: usize,
+        type_error: String,
+    }
+    struct NativeEvaluatedParameter {
+        name: String,
+        value: usize,
+        is_implicit_string: bool,
+        ty: usize,
+        type_error: String,
+    }
+    struct NamedValue {
         name: String,
         value: usize,
     }
@@ -252,7 +293,7 @@ mod ffi {
     }
     struct PackageSnapshot {
         name: String,
-        parameters: Vec<NativePackageValue>,
+        parameters: Vec<NamedValue>,
         enumerators: Vec<NativeVariant>,
         aliases: Vec<NativePackageType>,
         types: Vec<TypeNode>,
@@ -263,7 +304,11 @@ mod ffi {
         include!("slang-rs/cpp/native.h");
         type NativeCompilation;
 
-        fn create_compilation(config: NativeConfig) -> Result<UniquePtr<NativeCompilation>>;
+        fn create_compilation(
+            config: NativeConfig,
+            replace_tops: bool,
+            modules: &str,
+        ) -> Result<UniquePtr<NativeCompilation>>;
         fn compilation_valid(compilation: &NativeCompilation) -> bool;
         fn take_compilation_diagnostics(
             compilation: Pin<&mut NativeCompilation>,
@@ -276,7 +321,18 @@ mod ffi {
             parameters: bool,
             skip_unsupported: bool,
             top: &str,
+            enums_only: bool,
         ) -> Result<InterfaceSnapshot>;
+        fn compilation_parameter_declarations(
+            compilation: &NativeCompilation,
+            top: &str,
+        ) -> Result<ParameterDeclarations>;
+        fn compilation_parameter_values(
+            compilation: &NativeCompilation,
+            top: &str,
+            names: &[&str],
+            all: bool,
+        ) -> Result<NamedValues>;
         fn compilation_modules(compilation: &NativeCompilation) -> Result<Vec<String>>;
         fn compilation_top_names(compilation: &NativeCompilation) -> Result<Vec<String>>;
         fn compilation_hierarchy(
@@ -602,7 +658,25 @@ impl Compilation {
     /// A query that uncovers a compiler error returns semantic diagnostics for the design;
     /// subsequent queries return the same error.
     pub fn new(config: &SlangConfig<'_>) -> Result<Self, Error> {
-        let mut native = ffi::create_compilation(config.into())?;
+        Self::compile(config, None)
+    }
+
+    /// Elaborate replacement design units in a fresh compilation unit. Definitions in
+    /// `modules` supersede same-named source definitions. Original packages, interfaces,
+    /// and other dependencies retain their source compilation units, even in single-unit mode.
+    /// Original top-level binds and configurations are excluded. Select replacement roots
+    /// with [`SlangConfig::tops`] to limit elaboration to their hierarchies.
+    pub fn with_replacement_tops(config: &SlangConfig<'_>, modules: &str) -> Result<Self, Error> {
+        Self::compile(config, Some(modules))
+    }
+
+    /// Construct the native session and collect its diagnostics.
+    fn compile(config: &SlangConfig<'_>, modules: Option<&str>) -> Result<Self, Error> {
+        let mut native = ffi::create_compilation(
+            config.into(),
+            modules.is_some(),
+            modules.unwrap_or_default(),
+        )?;
         let valid = ffi::compilation_valid(&native);
         let diagnostics = ffi::take_compilation_diagnostics(native.pin_mut())?
             .into_iter()
@@ -711,7 +785,28 @@ impl Compilation {
     /// Values and type parameters are not included. Unsupported types return
     /// an error unless [`SlangConfig::skip_unsupported_parameters`] is enabled.
     pub fn parameters(&self) -> Result<HashMap<String, Vec<Parameter>>, Error> {
-        let snapshot = self.interfaces(true, self.skip_unsupported_parameters, "")?;
+        self.selected_parameters("", self.skip_unsupported_parameters, false)
+    }
+
+    /// Resolve overridable scalar enum parameter types on one elaborated top
+    /// without extracting unrelated parameter types or values.
+    pub fn enum_parameters_for(&self, top: &str) -> Result<Vec<Parameter>, LookupError> {
+        if top.is_empty() {
+            return Err(LookupError::not_found("top", top));
+        }
+        self.selected_parameters(top, false, true)?
+            .remove(top)
+            .ok_or_else(|| LookupError::not_found("top", top))
+    }
+
+    /// Snapshot parameter types for the specified top, or all tops when empty.
+    fn selected_parameters(
+        &self,
+        top: &str,
+        skip_unsupported: bool,
+        enums_only: bool,
+    ) -> Result<HashMap<String, Vec<Parameter>>, Error> {
+        let snapshot = self.read_interfaces(true, skip_unsupported, top, enums_only)?;
         let mut modules = HashMap::new();
         for module in snapshot.modules {
             let parameters = module
@@ -731,14 +826,133 @@ impl Compilation {
         Ok(modules)
     }
 
+    /// Read a top's original parameter port list and overridable body declarations,
+    /// including type parameters. Individual value parameters have initializer locations
+    /// in the expanded declaration text. Expressions retain their original lexical scope.
+    pub fn parameter_declarations_for(
+        &self,
+        top: &str,
+    ) -> Result<ModuleParameterDeclarations, LookupError> {
+        let result = self.query(|c| ffi::compilation_parameter_declarations(c, top))?;
+        if !result.found_top {
+            return Err(LookupError::not_found("top", top));
+        }
+        let parameters = result
+            .members
+            .into_iter()
+            .map(|decl| {
+                let declaration = ParameterDeclaration {
+                    data_type: (!decl.data_type.is_empty()).then_some(decl.data_type),
+                    dimensions: decl.dimensions,
+                    default: (!decl.default_expression.is_empty())
+                        .then_some(decl.default_expression),
+                    port_list_initializer: decl
+                        .is_port
+                        .then_some(decl.initializer_start..decl.initializer_end),
+                    body_initializer: (!decl.is_port)
+                        .then_some(decl.initializer_start..decl.initializer_end),
+                    package_type: (!decl.package_name.is_empty())
+                        .then_some((decl.package_name, decl.typedef_name)),
+                };
+                (decl.name, declaration)
+            })
+            .collect();
+        Ok(ModuleParameterDeclarations {
+            parameter_count: result.parameter_count,
+            declaration_names: result.declaration_names,
+            timescale: (!result.timescale.is_empty()).then_some(result.timescale),
+            imports: result.imports,
+            port_list: (!result.port_list.is_empty()).then_some(result.port_list),
+            body: result.body,
+            parameters,
+        })
+    }
+
+    /// Evaluate selected overridable value parameters on one elaborated top.
+    /// Names absent from that top, localparams, and type parameters are omitted.
+    /// Each result includes its resolved type, or an error describing why that
+    /// type cannot be represented. Implicit strings with unknown bits remain
+    /// packed four-state integers.
+    pub fn parameter_values_for(
+        &self,
+        top: &str,
+        names: &[&str],
+    ) -> Result<indexmap::IndexMap<String, EvaluatedParameter>, LookupError> {
+        Ok(self.read_parameter_state(top, Some(names))?.values)
+    }
+
+    /// Read all overridable value and type parameters and parameter-port localparams at
+    /// this top's current specialization. Body-local implementation details are excluded.
+    pub fn parameter_state_for(&self, top: &str) -> Result<ModuleParameterState, LookupError> {
+        self.read_parameter_state(top, None)
+    }
+
+    /// Read either selected value parameters or the full parameter interface.
+    fn read_parameter_state(
+        &self,
+        top: &str,
+        selected: Option<&[&str]>,
+    ) -> Result<ModuleParameterState, LookupError> {
+        let result = self.query(|c| {
+            ffi::compilation_parameter_values(
+                c,
+                top,
+                selected.unwrap_or_default(),
+                selected.is_none(),
+            )
+        })?;
+        if !result.found_top {
+            return Err(LookupError::not_found("top", top));
+        }
+        let resolve = |index, error: String| {
+            if error.is_empty() {
+                convert_type(&result.types, index, 0)
+            } else {
+                Err(snapshot_error(error))
+            }
+        };
+        let values = result
+            .members
+            .into_iter()
+            .map(|member| {
+                Ok((
+                    member.name,
+                    EvaluatedParameter {
+                        value: convert_value(&result.values, member.value, 0)?,
+                        is_implicit_string: member.is_implicit_string,
+                        ty: resolve(member.ty, member.type_error),
+                    },
+                ))
+            })
+            .collect::<Result<_, Error>>()?;
+        let types = result
+            .type_members
+            .into_iter()
+            .map(|entry| (entry.name, resolve(entry.ty, entry.type_error)))
+            .collect();
+        Ok(ModuleParameterState { values, types })
+    }
+
     fn interfaces(
         &self,
         parameters: bool,
         skip_unsupported: bool,
         top: &str,
     ) -> Result<ffi::InterfaceSnapshot, Error> {
-        let snapshot =
-            self.query(|c| ffi::compilation_interfaces(c, parameters, skip_unsupported, top))?;
+        self.read_interfaces(parameters, skip_unsupported, top, false)
+    }
+
+    /// Read the requested interface metadata through the native query boundary.
+    fn read_interfaces(
+        &self,
+        parameters: bool,
+        skip_unsupported: bool,
+        top: &str,
+        enums_only: bool,
+    ) -> Result<ffi::InterfaceSnapshot, Error> {
+        let snapshot = self.query(|c| {
+            ffi::compilation_interfaces(c, parameters, skip_unsupported, top, enums_only)
+        })?;
         if !snapshot.diagnostics.is_empty() {
             return Err(Error {
                 message: "Unsupported SystemVerilog interface".into(),
